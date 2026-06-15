@@ -29,12 +29,16 @@ export async function PATCH(req: Request) {
     if (key in data) update[key] = data[key]
   }
 
-  // Verifica unicità publicId
-  if (update.publicId) {
-    const existing = await prisma.user.findUnique({ where: { publicId: update.publicId as string } })
+  // Verifica unicità publicId (solo se valorizzato)
+  const pid = update.publicId as string | null | undefined
+  if (pid && pid.trim()) {
+    const existing = await prisma.user.findFirst({ where: { publicId: pid.trim() } })
     if (existing && existing.id !== user.id) {
       return NextResponse.json({ error: 'Questo ID pubblico è già in uso' }, { status: 409 })
     }
+    update.publicId = pid.trim()
+  } else if (pid === '' || pid === null) {
+    update.publicId = null
   }
 
   const updated = await prisma.user.update({ where: { id: user.id }, data: update })

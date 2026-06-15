@@ -29,6 +29,7 @@ export default function Impostazioni() {
   const [savingLocale, setSavingLocale] = useState(false)
   const [saved, setSaved] = useState(false)
   const [savedLocale, setSavedLocale] = useState(false)
+  const [dirtyLocale, setDirtyLocale] = useState(false)
   const [errorLocale, setErrorLocale] = useState('')
 
   useEffect(() => {
@@ -61,27 +62,35 @@ export default function Impostazioni() {
 
   async function handleSaveLocale() {
     setSavingLocale(true); setSavedLocale(false); setErrorLocale('')
-    const res = await fetch('/api/settings', {
-      method: 'PATCH', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        nomeLocale,
-        descrizioneBot,
-        maxCoperti: maxCoperti ? parseInt(maxCoperti) : null,
-        publicId: publicId.trim().toLowerCase().replace(/[^a-z0-9-]/g, '') || null,
-        orariApertura: JSON.stringify(orari),
-      }),
-    })
-    const data = await res.json()
-    setSavingLocale(false)
-    if (!res.ok) { setErrorLocale(data.error ?? 'Errore nel salvataggio'); return }
-    setSavedLocale(true)
-    setTimeout(() => setSavedLocale(false), 3000)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nomeLocale,
+          descrizioneBot,
+          maxCoperti: maxCoperti ? parseInt(maxCoperti) : null,
+          publicId: publicId.trim().toLowerCase().replace(/[^a-z0-9-]/g, '') || null,
+          orariApertura: JSON.stringify(orari),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setErrorLocale(data.error ?? 'Errore nel salvataggio'); return }
+      setSavedLocale(true)
+      setDirtyLocale(false)
+    } catch {
+      setErrorLocale('Errore di rete — riprova')
+    } finally {
+      setSavingLocale(false)
+    }
   }
 
   function updateOrario(giorno: string, val: string) {
     setOrari(prev => ({ ...prev, [giorno]: val }))
+    setDirtyLocale(true)
   }
+
+  function markDirty() { setDirtyLocale(true); setSavedLocale(false) }
 
   const widgetUrl = publicId ? `${typeof window !== 'undefined' ? window.location.origin : ''}/chat/${publicId}` : null
 
@@ -128,13 +137,13 @@ export default function Impostazioni() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Nome del locale</label>
-              <input type="text" value={nomeLocale} onChange={e => setNomeLocale(e.target.value)}
+              <input type="text" value={nomeLocale} onChange={e => { setNomeLocale(e.target.value); markDirty() }}
                 placeholder="Ristorante Da Mario"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Max coperti</label>
-              <input type="number" value={maxCoperti} onChange={e => setMaxCoperti(e.target.value)}
+              <input type="number" value={maxCoperti} onChange={e => { setMaxCoperti(e.target.value); markDirty() }}
                 placeholder="60"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
@@ -142,7 +151,7 @@ export default function Impostazioni() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione per il bot</label>
-            <textarea value={descrizioneBot} onChange={e => setDescrizioneBot(e.target.value)} rows={3}
+            <textarea value={descrizioneBot} onChange={e => { setDescrizioneBot(e.target.value); markDirty() }} rows={3}
               placeholder="Siamo una trattoria tradizionale nel centro di Roma. Offriamo cucina tipica romana, con specialità come cacio e pepe e carbonara. Aperto a pranzo e cena, chiuso il lunedì."
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
             <p className="text-xs text-gray-400 mt-1">Il bot userà questa descrizione per presentare il locale ai clienti.</p>
@@ -169,7 +178,7 @@ export default function Impostazioni() {
             <label className="block text-sm font-medium text-gray-700 mb-1">ID pubblico del bot</label>
             <div className="flex gap-2 items-center">
               <span className="text-sm text-gray-400 shrink-0">/chat/</span>
-              <input type="text" value={publicId} onChange={e => setPublicId(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+              <input type="text" value={publicId} onChange={e => { setPublicId(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')); markDirty() }}
                 placeholder="ristorante-mario"
                 className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
@@ -187,9 +196,13 @@ export default function Impostazioni() {
 
           {errorLocale && <p className="text-sm text-red-500">{errorLocale}</p>}
 
-          <button onClick={handleSaveLocale} disabled={savingLocale}
-            className="bg-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-            {savingLocale ? 'Salvataggio...' : savedLocale ? '✓ Salvato' : 'Salva configurazione'}
+          <button onClick={handleSaveLocale} disabled={savingLocale || (!dirtyLocale && savedLocale)}
+            className={`text-sm font-semibold px-4 py-2 rounded-lg transition-colors ${
+              savedLocale && !dirtyLocale
+                ? 'bg-green-100 text-green-700 cursor-default'
+                : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50'
+            }`}>
+            {savingLocale ? 'Salvataggio...' : savedLocale && !dirtyLocale ? '✓ Configurazione salvata' : 'Salva configurazione'}
           </button>
         </div>
       </section>
