@@ -23,7 +23,7 @@ export default function TopBar({ onMenuClick }: TopBarProps) {
         <button className="text-sm text-gray-500 hover:text-gray-700 transition-colors">
           🔔
         </button>
-        <UserButton afterSignOutUrl="/" />
+        <UserButton />
       </div>
     </header>
   )

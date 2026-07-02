@@ -51,10 +51,8 @@ export default function PublicChat() {
       const data = await res.json()
       if (data.text) {
         setMessages(prev => [...prev, { role: 'assistant', content: data.text }])
-        // Se la risposta contiene conferma di ricezione, segna come done
-        if (/ricontattato|ricontatteremo|confermato|ricevuto/i.test(data.text)) {
-          setDone(true)
-        }
+        // Si chiude solo quando il backend ha salvato la richiesta (DATI_RACCOLTI ricevuti)
+        if (data.raccoltoDati) setDone(true)
       }
     } catch { /* ignora */ }
     finally { setLoading(false) }

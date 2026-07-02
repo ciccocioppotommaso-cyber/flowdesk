@@ -1,13 +1,11 @@
-import { auth } from '@clerk/nextjs/server'
+import { getAuthUser, getAuthUserId } from '@/lib/getAuthUser'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
 // Cancella (soft) il lead collegato a un'email o a un leadId
 export async function POST(req: Request) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-
-  const user = await prisma.user.findUnique({ where: { clerkId: userId } })
+  const user = await getAuthUser(req)
+  const userId = user?.id
   if (!user) return NextResponse.json({ error: 'Utente non trovato' }, { status: 404 })
 
   const { email, leadId } = await req.json()

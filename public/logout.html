@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Logout</title></head>
+<body>
+<script>
+  // Cancella tutti i cookie
+  document.cookie.split(';').forEach(c => {
+    document.cookie = c.trim().split('=')[0] + '=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/';
+  });
+  // Cancella localStorage e sessionStorage
+  localStorage.clear();
+  sessionStorage.clear();
+  // Reindirizza al sign-in
+  setTimeout(() => { window.location.href = '/sign-in'; }, 500);
+</script>
+<p>Logout in corso...</p>
+</body>
+</html>

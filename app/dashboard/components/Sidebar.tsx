@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
 
 const navigation = [
   {
@@ -25,7 +26,15 @@ const navigation = [
       { label: 'Messaggi', href: '/dashboard/clienti/inbox', icon: '💬' },
       { label: 'Richieste', href: '/dashboard/clienti/preventivi', icon: '📋' },
       { label: 'Calendario', href: '/dashboard/clienti/calendario', icon: '🗓️' },
+      { label: 'Lista d\'attesa', href: '/dashboard/clienti/lista-attesa', icon: '⏳' },
       { label: 'Chatbot Demo', href: '/dashboard/clienti/chatbot', icon: '🤖' },
+    ],
+  },
+  {
+    section: 'Gestione',
+    items: [
+      { label: 'Tavoli', href: '/dashboard/tavoli', icon: '🪑' },
+      { label: 'Analytics', href: '/dashboard/analytics', icon: '📊' },
     ],
   },
   {
@@ -43,6 +52,30 @@ interface SidebarProps {
 
 export default function Sidebar({ open }: SidebarProps) {
   const pathname = usePathname()
+  const [daVerificare, setDaVerificare] = useState(0)
+  const [inAttesa, setInAttesa] = useState(0)
+
+  useEffect(() => {
+    async function fetchCount() {
+      try {
+        const [resP, resA] = await Promise.all([
+          fetch('/api/preventivi/count', { credentials: 'include' }),
+          fetch('/api/lista-attesa?attivi=true', { credentials: 'include' }),
+        ])
+        const dataP = await resP.json()
+        const dataA = await resA.json()
+        setDaVerificare(dataP.daVerificare ?? 0)
+        setInAttesa((dataA.lista ?? []).length)
+      } catch { /* ignora errori di rete */ }
+    }
+    fetchCount()
+    const interval = setInterval(fetchCount, 30000)
+    window.addEventListener('refresh-richieste-count', fetchCount)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('refresh-richieste-count', fetchCount)
+    }
+  }, [])
 
   return (
     <aside
@@ -98,8 +131,30 @@ export default function Sidebar({ open }: SidebarProps) {
                           : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                       }`}
                     >
-                      <span className="text-base shrink-0">{sub.icon}</span>
-                      {open && <span>{sub.label}</span>}
+                      <span className="text-base shrink-0 relative">
+                        {sub.icon}
+                        {sub.href === '/dashboard/clienti/preventivi' && daVerificare > 0 && (
+                          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
+                            {daVerificare > 9 ? '9+' : daVerificare}
+                          </span>
+                        )}
+                        {sub.href === '/dashboard/clienti/lista-attesa' && inAttesa > 0 && (
+                          <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-[9px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
+                            {inAttesa > 9 ? '9+' : inAttesa}
+                          </span>
+                        )}
+                      </span>
+                      {open && <span className="flex-1">{sub.label}</span>}
+                      {open && sub.href === '/dashboard/clienti/preventivi' && daVerificare > 0 && (
+                        <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
+                          {daVerificare > 9 ? '9+' : daVerificare}
+                        </span>
+                      )}
+                      {open && sub.href === '/dashboard/clienti/lista-attesa' && inAttesa > 0 && (
+                        <span className="bg-amber-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
+                          {inAttesa > 9 ? '9+' : inAttesa}
+                        </span>
+                      )}
                     </Link>
                   )
                 })}

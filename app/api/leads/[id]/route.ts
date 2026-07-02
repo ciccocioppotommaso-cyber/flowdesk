@@ -1,9 +1,9 @@
-import { auth } from '@clerk/nextjs/server'
+import { getAuthUser, getAuthUserId } from '@/lib/getAuthUser'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { userId } = await auth()
+  const userId = await getAuthUserId(req)
   if (!userId) return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
 
   const { id } = await params
@@ -17,7 +17,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
 // Soft-cancel: marca tutto come cancellato senza eliminare
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { userId } = await auth()
+  const userId = await getAuthUserId(req)
   if (!userId) return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
 
   const { id } = await params

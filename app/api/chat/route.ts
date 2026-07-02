@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { buildSystemPrompt as buildBotPrompt } from '@/lib/botPrompt'
 
 function categorizzaRichiesta(servizio: string): string {
   const s = servizio.toLowerCase()
@@ -16,108 +17,8 @@ const client = new Anthropic({
   fetchOptions: { agent: new (require('https').Agent)({ rejectUnauthorized: false }) },
 })
 
-interface BusinessSettings {
-  nomeLocale?: string | null
-  descrizioneBot?: string | null
-  maxCoperti?: number | null
-  orariApertura?: string | null
-}
-
-function buildSystemPrompt(
-  slots: { data: Date | string; oraInizio: string; oraFine: string; durata: number }[],
-  settings: BusinessSettings
-) {
-  const GIORNI = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato']
-  const oggi = new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-
-  const nomeLocale = settings.nomeLocale || 'questa attività'
-
-  let descLocale = ''
-  if (settings.descrizioneBot) {
-    descLocale = `\n\nDESCRIZIONE DEL LOCALE:\n${settings.descrizioneBot}`
-  }
-
-  let orariInfo = ''
-  if (settings.orariApertura) {
-    try {
-      const orari = JSON.parse(settings.orariApertura) as Record<string, string>
-      const righeOrari = Object.entries(orari)
-        .filter(([, v]) => v)
-        .map(([g, v]) => `- ${g}: ${v}`)
-      if (righeOrari.length > 0) {
-        orariInfo = `\n\nORARI DI APERTURA:\n${righeOrari.join('\n')}`
-      }
-    } catch { /* ignora */ }
-  }
-
-  let slotInfo = ''
-  if (slots.length > 0) {
-    const righe = slots.map(s => {
-      const d = new Date(s.data)
-      const giorno = GIORNI[d.getDay()]
-      const dataStr = d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long' })
-      return `- ${giorno} ${dataStr}: ${s.oraInizio}–${s.oraFine} (${s.durata} min)`
-    })
-    slotInfo = `\n\nSLOT AGENDA DISPONIBILI:\n${righe.join('\n')}\nProponi questi slot solo per appuntamenti con orario fisso.`
-  }
-
-  return `Sei l'assistente virtuale di ${nomeLocale}. Il tuo obiettivo è raccogliere le informazioni necessarie per gestire la richiesta del cliente in modo naturale e conversazionale.
-
-DATA DI OGGI: ${oggi}${descLocale}${orariInfo}${slotInfo}
-
-## COME COMPORTARTI
-
-Accogli il cliente calorosamente e inizia a raccogliere le informazioni. Fallo in modo naturale — non come un form, ma come una conversazione. Puoi raccogliere più info in un singolo messaggio, ma non essere robotico.
-
-## INFORMAZIONI DA RACCOGLIERE SEMPRE
-- Nome e cognome
-- Email di contatto
-
-## INFORMAZIONI AGGIUNTIVE PER TIPO DI RICHIESTA
-
-**Se il cliente vuole prenotare un TAVOLO:**
-- Data e ora desiderata
-- Numero di persone (coperti)
-- Allergie o intolleranze alimentari (chiedi sempre)
-- Occasione speciale (compleanno, anniversario, lavoro — solo se non è chiaro)
-
-**Se il cliente vuole un APPUNTAMENTO:**
-- Tipo di servizio/motivo
-- Data e ora preferita (proponi gli slot se disponibili)
-
-**Se il cliente fa un ORDINE:**
-- Cosa vuole ordinare e quantità
-- Data/ora di consegna o ritiro (se rilevante)
-- Eventuale indirizzo di consegna
-
-**Se chiede un PREVENTIVO o CATERING:**
-- Descrizione del servizio
-- Data dell'evento
-- Numero di persone (se rilevante)
-- Budget indicativo (se si offre spontaneamente)
-
-## QUANDO HAI RACCOLTO I DATI
-
-Conferma tutto al cliente con un riepilogo chiaro, digli che sarà ricontattato a breve per conferma.
-
-Poi aggiungi ALLA FINE, su una riga separata (non mostrarla al cliente):
-DATI_RACCOLTI:{"nome":"...","email":"...","richiesta":"...","servizio":"...","dataISO":"YYYY-MM-DD","oraISO":"HH:MM","coperti":0,"allergie":"...","occasione":"..."}
-
-Note sui campi JSON:
-- "richiesta": descrizione completa di cosa vuole il cliente
-- "servizio": titolo breve (es: "Prenotazione tavolo", "Visita dentistica")
-- "dataISO": data in formato YYYY-MM-DD, "" se non specificata
-- "oraISO": ora in formato HH:MM, "" se non specificata
-- "coperti": numero persone come intero, 0 se non applicabile
-- "allergie": eventuali allergie, "" se nessuna o non rilevante
-- "occasione": occasione speciale, "" se non specificata
-
-## REGOLE
-- Scrivi sempre in italiano
-- Sii caldo, professionale e conciso
-- Non inventare informazioni
-- Se l'orario richiesto è fuori dagli orari di apertura, avvisa gentilmente il cliente`
-}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type BusinessSettings = any
 
 export async function POST(req: Request) {
   const { messages, ownerId } = await req.json()
@@ -129,12 +30,7 @@ export async function POST(req: Request) {
     try {
       const owner = await prisma.user.findUnique({ where: { id: ownerId } })
       if (owner) {
-        settings = {
-          nomeLocale: owner.nomeLocale,
-          descrizioneBot: owner.descrizioneBot,
-          maxCoperti: owner.maxCoperti,
-          orariApertura: owner.orariApertura,
-        }
+        settings = owner
         const now = new Date()
         slots = await prisma.slotDisponibile.findMany({
           where: { userId: owner.id, data: { gte: now } },
@@ -149,21 +45,14 @@ export async function POST(req: Request) {
   if (publicId && !ownerId) {
     try {
       const owner = await prisma.user.findUnique({ where: { publicId } })
-      if (owner) {
-        settings = {
-          nomeLocale: owner.nomeLocale,
-          descrizioneBot: owner.descrizioneBot,
-          maxCoperti: owner.maxCoperti,
-          orariApertura: owner.orariApertura,
-        }
-      }
+      if (owner) settings = owner
     } catch (e) { console.error('[CHAT] errore publicId settings:', e) }
   }
 
   const response = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 800,
-    system: buildSystemPrompt(slots, settings),
+    system: buildBotPrompt(settings),
     messages,
   })
 
@@ -198,6 +87,14 @@ export async function POST(req: Request) {
               orderBy: { createdAt: 'desc' },
             })
 
+            // Se il lead era cancellato, lo ripristina come nuovo contatto
+            if (leadEsistente?.cancellato) {
+              await prisma.lead.update({
+                where: { id: leadEsistente.id },
+                data: { cancellato: false, status: 'nuovo' },
+              })
+            }
+
             const lead = leadEsistente ?? await prisma.lead.create({
               data: {
                 userId: owner.id,
@@ -208,11 +105,7 @@ export async function POST(req: Request) {
               },
             })
 
-            const richiestaEsistente = await prisma.preventivo.findFirst({
-              where: { userId: owner.id, leadId: lead.id },
-            })
-
-            if (!richiestaEsistente) {
+            {
               const tipo = categorizzaRichiesta(dati.servizio || dati.richiesta)
               const count = await prisma.preventivo.count({ where: { userId: owner.id } })
 

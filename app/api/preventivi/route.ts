@@ -1,4 +1,4 @@
-import { auth, currentUser } from '@clerk/nextjs/server'
+import { getAuthUser, getAuthUserId } from '@/lib/getAuthUser'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
@@ -19,7 +19,7 @@ async function getOrCreateUser(clerkId: string) {
 }
 
 export async function GET(req: Request) {
-  const { userId } = await auth()
+  const userId = await getAuthUserId(req)
   if (!userId) return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
 
   const user = await getOrCreateUser(userId)
@@ -35,7 +35,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const { userId } = await auth()
+  const userId = await getAuthUserId(req)
   if (!userId) return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
 
   const user = await getOrCreateUser(userId)

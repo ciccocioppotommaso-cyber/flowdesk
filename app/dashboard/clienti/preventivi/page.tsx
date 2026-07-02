@@ -92,6 +92,8 @@ const TIPI: { id: string; label: string; emoji: string; color: string }[] = [
 
 const STATUS_COLORS: Record<string, string> = {
   da_verificare: 'bg-amber-100 text-amber-700',
+  lista_attesa: 'bg-orange-100 text-orange-700',
+  lista_attesa_contattato: 'bg-blue-100 text-blue-700',
   bozza: 'bg-gray-100 text-gray-600',
   inviato: 'bg-blue-100 text-blue-700',
   accettato: 'bg-green-100 text-green-700',
@@ -101,6 +103,8 @@ const STATUS_COLORS: Record<string, string> = {
 
 const STATUS_LABELS: Record<string, string> = {
   da_verificare: '⚡ Da verificare',
+  lista_attesa: '⏳ Lista d\'attesa',
+  lista_attesa_contattato: '📞 Contattato',
   bozza: 'Bozza',
   inviato: 'Inviato',
   accettato: 'Accettato ✓',
@@ -220,26 +224,100 @@ function NuovaRichiestaModal({ onClose, onSave, initial }: {
   )
 }
 
+function PropostaModificaModal({ richiesta, onClose, onInvia }: {
+  richiesta: Richiesta
+  onClose: () => void
+  onInvia: (messaggio: string, note: string) => void
+}) {
+  const [messaggio, setMessaggio] = useState('')
+  const [note, setNote] = useState(richiesta.note ?? '')
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Proponi modifica</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Il cliente riceverà una email con la proposta e potrà accettare o rifiutare</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-sm text-amber-800">
+          📋 Richiesta di: <strong>{richiesta.clienteName}</strong>
+          {richiesta.clienteEmail && <span className="text-amber-600"> · {richiesta.clienteEmail}</span>}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Messaggio per il cliente *</label>
+          <textarea
+            value={messaggio}
+            onChange={e => setMessaggio(e.target.value)}
+            rows={3}
+            placeholder="Es: L'orario delle 20:00 non è disponibile, possiamo offrirti le 19:30 o le 21:00. Il tavolo sarebbe in sala interna."
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+          />
+          <p className="text-xs text-gray-400 mt-1">Spiega cosa cambia rispetto alla richiesta originale.</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Note interne (non visibili al cliente)</label>
+          <textarea
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            rows={2}
+            placeholder="Note per uso interno..."
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+          />
+        </div>
+
+        <div className="flex gap-3 pt-1">
+          <button onClick={onClose} className="flex-1 border border-gray-300 text-gray-700 font-semibold py-2.5 rounded-lg hover:bg-gray-50">
+            Annulla
+          </button>
+          <button
+            onClick={() => onInvia(messaggio, note)}
+            disabled={!messaggio.trim()}
+            className="flex-1 bg-amber-500 text-white font-semibold py-2.5 rounded-lg hover:bg-amber-600 disabled:opacity-40">
+            📤 Invia proposta
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ConfermaAppuntamentoModal({ richiesta, onClose, onConferma }: {
   richiesta: Richiesta
   onClose: () => void
-  onConferma: (data: string, ora: string, servizio: string, durata: number) => void
+  onConferma: (data: string, ora: string, servizio: string, durata: number, coperti?: number, allergie?: string, occasione?: string) => void
 }) {
-  const servizioDefault = JSON.parse(richiesta.items)[0]?.descrizione ?? ''
+  const isTavolo = richiesta.tipo === 'tavolo'
+  const items = JSON.parse(richiesta.items) as ItemExt[]
+  const servizioDefault = items[0]?.descrizione ?? (isTavolo ? 'Prenotazione tavolo' : '')
   const dataMatch = richiesta.note?.match(/DATA_ISO:(\d{4}-\d{2}-\d{2})/)
   const oraMatch = richiesta.note?.match(/ORA_ISO:(\d{2}:\d{2})/)
+  const copertiNote = richiesta.note?.match(/Coperti:\s*(\d+)/)
+  const allergieNote = richiesta.note?.match(/Allergie:\s*([^.]+)/)
+  const occasioneNote = richiesta.note?.match(/Occasione:\s*([^.]+)/)
+
   const [data, setData] = useState(dataMatch?.[1] ?? '')
-  const [ora, setOra] = useState(oraMatch?.[1] ?? '09:00')
+  const [ora, setOra] = useState(oraMatch?.[1] ?? '19:30')
   const [servizio, setServizio] = useState(servizioDefault)
-  const [durata, setDurata] = useState(60)
+  const [durata, setDurata] = useState(isTavolo ? 120 : 60)
+  const [coperti, setCoperti] = useState(String(items[0]?.coperti ?? copertiNote?.[1] ?? '2'))
+  const [allergie, setAllergie] = useState(items[0]?.allergie ?? allergieNote?.[1]?.trim() ?? '')
+  const [occasione, setOccasione] = useState(items[0]?.occasione ?? occasioneNote?.[1]?.trim() ?? '')
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Conferma appuntamento</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Richiesta accettata — crea l'appuntamento</p>
+            <h2 className="text-lg font-bold text-gray-900">
+              {isTavolo ? 'Conferma prenotazione tavolo' : 'Conferma appuntamento'}
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5">Richiesta accettata — aggiungi al calendario</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
         </div>
@@ -247,11 +325,13 @@ function ConfermaAppuntamentoModal({ richiesta, onClose, onConferma }: {
           ✓ Cliente: <strong>{richiesta.clienteName}</strong>
         </div>
         <div className="space-y-3">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Servizio</label>
-            <input type="text" value={servizio} onChange={e => setServizio(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-          </div>
+          {!isTavolo && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Servizio</label>
+              <input type="text" value={servizio} onChange={e => setServizio(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Data *</label>
@@ -264,19 +344,53 @@ function ConfermaAppuntamentoModal({ richiesta, onClose, onConferma }: {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Durata</label>
-            <select value={durata} onChange={e => setDurata(Number(e.target.value))}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-              {[30, 45, 60, 90, 120].map(d => <option key={d} value={d}>{d} minuti</option>)}
-            </select>
-          </div>
+          {isTavolo ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Coperti</label>
+                  <input type="number" min={1} value={coperti} onChange={e => setCoperti(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Durata stimata</label>
+                  <select value={durata} onChange={e => setDurata(Number(e.target.value))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    {[60, 90, 120, 150, 180].map(d => <option key={d} value={d}>{d} min</option>)}
+                  </select>
+                </div>
+              </div>
+              {allergie && allergie.toLowerCase() !== 'nessuna' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Allergie / intolleranze</label>
+                  <input type="text" value={allergie} onChange={e => setAllergie(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+              )}
+              {occasione && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Occasione</label>
+                  <input type="text" value={occasione} onChange={e => setOccasione(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+              )}
+            </>
+          ) : (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Durata</label>
+              <select value={durata} onChange={e => setDurata(Number(e.target.value))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                {[30, 45, 60, 90, 120].map(d => <option key={d} value={d}>{d} minuti</option>)}
+              </select>
+            </div>
+          )}
         </div>
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 border border-gray-300 text-gray-700 font-semibold py-2.5 rounded-lg hover:bg-gray-50">Salta</button>
-          <button onClick={() => onConferma(data, ora, servizio, durata)} disabled={!data}
+          <button onClick={() => onConferma(data, ora, servizio, durata, parseInt(coperti) || undefined, allergie || undefined, occasione || undefined)}
+            disabled={!data}
             className="flex-1 bg-green-600 text-white font-semibold py-2.5 rounded-lg hover:bg-green-700 disabled:opacity-40">
-            Crea appuntamento
+            Aggiungi al calendario
           </button>
         </div>
       </div>
@@ -296,6 +410,7 @@ function Richieste() {
   const [editingRichiesta, setEditingRichiesta] = useState<Richiesta | null>(null)
   const [selected, setSelected] = useState<Richiesta | null>(null)
   const [confermaApp, setConfermaApp] = useState<Richiesta | null>(null)
+  const [proposta, setProposta] = useState<Richiesta | null>(null)
   const [tipoAttivo, setTipoAttivo] = useState('tutti')
 
   async function fetchRichieste() {
@@ -374,15 +489,17 @@ function Richieste() {
         setSelected(null)
         setConfermaApp(corrente)
         await fetchRichieste()
+        window.dispatchEvent(new Event('refresh-richieste-count'))
         return
       }
     }
 
     await fetchRichieste()
+    window.dispatchEvent(new Event('refresh-richieste-count'))
     setSelected(prev => prev ? { ...prev, status } : null)
   }
 
-  async function handleConfermaAppuntamento(data: string, ora: string, servizio: string, durata: number) {
+  async function handleConfermaAppuntamento(data: string, ora: string, servizio: string, durata: number, coperti?: number, allergie?: string, occasione?: string) {
     if (!confermaApp) return
     await fetch('/api/appuntamenti', {
       method: 'POST', credentials: 'include',
@@ -394,9 +511,23 @@ function Richieste() {
         data: new Date(`${data}T${ora}`).toISOString(),
         durata,
         note: `Da richiesta #${String(confermaApp.numero).padStart(3, '0')}`,
+        coperti,
+        allergie,
+        occasione,
       }),
     })
     setConfermaApp(null)
+  }
+
+  async function handleInviaProposta(messaggio: string, note: string) {
+    if (!proposta) return
+    await fetch(`/api/preventivi/${proposta.id}`, {
+      method: 'PATCH', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ _azione: 'proposta', messaggio, note }),
+    })
+    setProposta(null)
+    await fetchRichieste()
   }
 
   async function handleDelete(id: string) {
@@ -416,16 +547,18 @@ function Richieste() {
   }
 
   const daVerificare = richieste.filter(r => r.status === 'da_verificare')
+  const inListaAttesa = richieste.filter(r => r.status === 'lista_attesa' || r.status === 'lista_attesa_contattato')
   const tipoInfo = (tipo: string) => TIPI.find(t => t.id === tipo) ?? TIPI[0]
 
+  const isListaAttesa = (s: string) => s === 'lista_attesa' || s === 'lista_attesa_contattato'
   const richiesteVisibili = tipoAttivo === 'tutti'
-    ? richieste.filter(r => r.status !== 'da_verificare')
-    : richieste.filter(r => r.tipo === tipoAttivo && r.status !== 'da_verificare')
+    ? richieste.filter(r => r.status !== 'da_verificare' && !isListaAttesa(r.status))
+    : richieste.filter(r => r.tipo === tipoAttivo && r.status !== 'da_verificare' && !isListaAttesa(r.status))
 
   const conteggioPerTipo = (tipo: string) =>
     tipo === 'tutti'
-      ? richieste.filter(r => r.status !== 'da_verificare').length
-      : richieste.filter(r => r.tipo === tipo && r.status !== 'da_verificare').length
+      ? richieste.filter(r => r.status !== 'da_verificare' && r.status !== 'lista_attesa').length
+      : richieste.filter(r => r.tipo === tipo && r.status !== 'da_verificare' && r.status !== 'lista_attesa').length
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -489,6 +622,47 @@ function Richieste() {
                         </tr>
                       )
                     })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Lista d'attesa */}
+          {inListaAttesa.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-sm font-semibold text-orange-700 uppercase tracking-wider">⏳ Lista d&apos;attesa</span>
+                <span className="bg-orange-100 text-orange-700 text-xs font-bold px-2 py-0.5 rounded-full">{inListaAttesa.length}</span>
+              </div>
+              <div className="bg-white border-2 border-orange-200 rounded-xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-orange-50 border-b border-orange-200">
+                    <tr>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-orange-600 uppercase tracking-wider">N°</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-orange-600 uppercase tracking-wider">Cliente</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-orange-600 uppercase tracking-wider">Richiesta</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-orange-600 uppercase tracking-wider">Data</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-orange-100">
+                    {inListaAttesa.map(r => (
+                      <tr key={r.id} onClick={() => setSelected(r)} className="hover:bg-orange-50 cursor-pointer transition-colors">
+                        <td className="px-4 py-3 font-medium text-gray-900">#{String(r.numero).padStart(3, '0')}</td>
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-gray-900">{r.clienteName}</p>
+                          {r.clienteEmail && <p className="text-xs text-gray-400">{r.clienteEmail}</p>}
+                        </td>
+                        <td className="px-4 py-3 max-w-xs">
+                          {(() => {
+                            const items = JSON.parse(r.items) as Item[]
+                            const desc = items.map(i => i.descrizione).filter(Boolean).join(', ')
+                            return <p className="text-sm text-gray-600 truncate">{desc || '—'}</p>
+                          })()}
+                        </td>
+                        <td className="px-4 py-3 text-gray-500">{new Date(r.createdAt).toLocaleDateString('it-IT')}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -648,15 +822,35 @@ function Richieste() {
                     {selected.status === 'da_verificare' ? 'Azioni rapide' : 'Aggiorna stato'}
                   </p>
                   {selected.status === 'da_verificare' ? (
-                    <div className="flex gap-2">
-                      <button onClick={() => { setEditingRichiesta(selected); setSelected(null); setShowModal(true) }}
-                        className="flex-1 bg-indigo-600 text-white text-sm font-semibold py-2 rounded-lg hover:bg-indigo-700">
-                        ✏️ Gestisci
+                    <div className="space-y-2">
+                      <button onClick={() => { handleStatusChange(selected.id, 'accettato') }}
+                        className="w-full bg-green-600 text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2">
+                        ✓ Accetta
                       </button>
-                      <button onClick={() => handleStatusChange(selected.id, 'inviato')}
-                        className="flex-1 bg-blue-600 text-white text-sm font-semibold py-2 rounded-lg hover:bg-blue-700">
-                        📤 Invia
+                      <button onClick={() => { setProposta(selected); setSelected(null) }}
+                        className="w-full bg-amber-500 text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-amber-600 flex items-center justify-center gap-2">
+                        ✏️ Proponi modifica
                       </button>
+                      <button onClick={() => { handleStatusChange(selected.id, 'rifiutato') }}
+                        className="w-full border border-red-200 text-red-500 text-sm font-semibold py-2.5 rounded-lg hover:bg-red-50 flex items-center justify-center gap-2">
+                        ✕ Rifiuta
+                      </button>
+                    </div>
+                  ) : selected.status === 'inviato' ? (
+                    <div className="space-y-2">
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 text-center">
+                        ⏳ In attesa di risposta dal cliente
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleStatusChange(selected.id, 'accettato')}
+                          className="flex-1 bg-green-600 text-white text-sm font-semibold py-2 rounded-lg hover:bg-green-700">
+                          ✓ Forza accetta
+                        </button>
+                        <button onClick={() => handleStatusChange(selected.id, 'rifiutato')}
+                          className="flex-1 border border-red-200 text-red-500 text-sm font-semibold py-2 rounded-lg hover:bg-red-50">
+                          ✕ Forza rifiuta
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="flex flex-wrap gap-2">
@@ -693,11 +887,13 @@ function Richieste() {
         )
       })()}
 
+      {proposta && <PropostaModificaModal richiesta={proposta} onClose={() => setProposta(null)} onInvia={handleInviaProposta} />}
+
       {confermaApp && (
         <ConfermaAppuntamentoModal
           richiesta={confermaApp}
           onClose={() => setConfermaApp(null)}
-          onConferma={handleConfermaAppuntamento}
+          onConferma={(d, o, s, dur, cop, all, occ) => handleConfermaAppuntamento(d, o, s, dur, cop, all, occ)}
         />
       )}
     </div>

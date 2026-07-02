@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { auth } from '@clerk/nextjs/server'
+import { getAuthUser, getAuthUserId } from '@/lib/getAuthUser'
 import { NextResponse } from 'next/server'
 
 const client = new Anthropic({
@@ -16,7 +16,7 @@ const channelPrompts: Record<string, string> = {
 }
 
 export async function POST(req: Request) {
-  const { userId } = await auth()
+  const userId = await getAuthUserId(req)
   if (!userId) return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
 
   const { text, channel } = await req.json()

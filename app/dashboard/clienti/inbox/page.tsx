@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 
 interface Messaggio {
   role: 'user' | 'assistant'
@@ -27,11 +28,16 @@ interface ClienteGroup {
 }
 
 export default function Inbox() {
+  const searchParams = useSearchParams()
   const [conversazioni, setConversazioni] = useState<Conversazione[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedCliente, setSelectedCliente] = useState<ClienteGroup | null>(null)
   const [selezioneAttiva, setSelezioneAttiva] = useState(false)
   const [selezionati, setSelezionati] = useState<Set<string>>(new Set())
+  const [risposta, setRisposta] = useState('')
+  const [invioInCorso, setInvioInCorso] = useState(false)
+  const [messaggiLocali, setMessaggiLocali] = useState<Messaggio[]>([])
+  const bottomRef = useRef<HTMLDivElement>(null)
 
   async function fetchConversazioni() {
     const res = await fetch('/api/conversazioni', { credentials: 'include', cache: 'no-store' })
@@ -42,9 +48,34 @@ export default function Inbox() {
 
   useEffect(() => { fetchConversazioni() }, [])
 
+  // Scroll al fondo quando si apre una chat o arrivano nuovi messaggi
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'instant' })
+  }, [selectedCliente, messaggiLocali])
+
+  // Auto-apri chat se arriva ?apri=email dalla pipeline (eseguito dopo che i dati sono caricati)
+  const emailDaAprire = searchParams.get('apri')
+  useEffect(() => {
+    if (!emailDaAprire || loading || selectedCliente) return
+    const gruppo = Object.values(
+      conversazioni.reduce<Record<string, ClienteGroup>>((acc, conv) => {
+        const key = conv.clienteEmail || conv.clienteNome || conv.id
+        if (!acc[key]) {
+          const msgs: Messaggio[] = JSON.parse(conv.messaggi)
+          acc[key] = { email: conv.clienteEmail || '', nome: conv.clienteNome || 'Visitatore anonimo', conversazioni: [], nonLette: 0, ultimoMessaggio: msgs[msgs.length - 1]?.content ?? '', ultimaData: conv.updatedAt }
+        }
+        acc[key].conversazioni.push(conv)
+        return acc
+      }, {})
+    ).find(g => g.email === emailDaAprire)
+    if (gruppo) handleOpenCliente(gruppo)
+  }, [loading, emailDaAprire])
+
   async function handleOpenCliente(group: ClienteGroup) {
     if (selezioneAttiva) return
     setSelectedCliente(group)
+    setRisposta('')
+    setMessaggiLocali([])
     const nonLette = group.conversazioni.filter(c => !c.letta)
     await Promise.all(nonLette.map(c =>
       fetch(`/api/conversazioni/${c.id}`, {
@@ -58,6 +89,27 @@ export default function Inbox() {
         nonLette.find(nl => nl.id === c.id) ? { ...c, letta: true } : c
       ))
     }
+  }
+
+  async function handleInviaRisposta() {
+    if (!risposta.trim() || !selectedCliente) return
+    setInvioInCorso(true)
+    const nuovoMsg: Messaggio = { role: 'assistant', content: risposta.trim() }
+    setMessaggiLocali(prev => [...prev, nuovoMsg])
+    setRisposta('')
+    // Salva nella conversazione più recente del cliente
+    const convRecente = [...selectedCliente.conversazioni].sort((a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    )[0]
+    if (convRecente) {
+      const msgEsistenti: Messaggio[] = JSON.parse(convRecente.messaggi)
+      await fetch(`/api/conversazioni/${convRecente.id}`, {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messaggi: JSON.stringify([...msgEsistenti, nuovoMsg]), letta: true }),
+      })
+    }
+    setInvioInCorso(false)
   }
 
   async function handleDeleteGruppo(group: ClienteGroup) {
@@ -122,9 +174,12 @@ export default function Inbox() {
   const nonLetteTotale = listaGruppi.reduce((sum, g) => sum + g.nonLette, 0)
 
   const messaggiCliente: Messaggio[] = selectedCliente
-    ? selectedCliente.conversazioni
-        .sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime())
-        .flatMap(c => JSON.parse(c.messaggi) as Messaggio[])
+    ? [
+        ...selectedCliente.conversazioni
+          .sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime())
+          .flatMap(c => JSON.parse(c.messaggi) as Messaggio[]),
+        ...messaggiLocali,
+      ]
     : []
 
   return (
@@ -238,6 +293,37 @@ export default function Inbox() {
                   </div>
                 </div>
               ))}
+              <div ref={bottomRef} />
+            </div>
+
+            {/* Campo risposta */}
+            <div className="px-4 py-3 border-t border-gray-200 bg-white">
+              {selectedCliente.conversazioni[0]?.canale !== 'widget' && selectedCliente.conversazioni[0]?.canale !== 'chat' ? null : (
+                <div className="flex items-center gap-1 mb-2">
+                  <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                    ⚠️ Canale web — il messaggio non verrà recapitato al cliente finché non integri WhatsApp/Instagram
+                  </span>
+                </div>
+              )}
+              <div className="flex gap-2 items-end">
+                <textarea
+                  value={risposta}
+                  onChange={e => setRisposta(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleInviaRisposta() } }}
+                  placeholder="Scrivi una risposta..."
+                  rows={2}
+                  className="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                />
+                <button
+                  onClick={handleInviaRisposta}
+                  disabled={!risposta.trim() || invioInCorso}
+                  className="bg-indigo-600 text-white p-2.5 rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-colors shrink-0">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"/>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>

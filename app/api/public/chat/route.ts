@@ -1,54 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { buildSystemPrompt } from '@/lib/botPrompt'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
   fetchOptions: { agent: new (require('https').Agent)({ rejectUnauthorized: false }) },
 })
-
-function buildPublicSystemPrompt(settings: {
-  nomeLocale?: string | null
-  descrizioneBot?: string | null
-  orariApertura?: string | null
-}) {
-  const nomeLocale = settings.nomeLocale || 'questa attività'
-  const oggi = new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-
-  let descLocale = settings.descrizioneBot ? `\n\nDESCRIZIONE:\n${settings.descrizioneBot}` : ''
-
-  let orariInfo = ''
-  if (settings.orariApertura) {
-    try {
-      const orari = JSON.parse(settings.orariApertura) as Record<string, string>
-      const righe = Object.entries(orari).filter(([, v]) => v).map(([g, v]) => `- ${g}: ${v}`)
-      if (righe.length > 0) orariInfo = `\n\nORARI DI APERTURA:\n${righe.join('\n')}`
-    } catch { /* ignora */ }
-  }
-
-  return `Sei l'assistente virtuale di ${nomeLocale}. Aiuta i clienti a fare prenotazioni e richieste in modo naturale e cordiale.
-
-DATA DI OGGI: ${oggi}${descLocale}${orariInfo}
-
-## COSA FARE
-
-Accogli il cliente e raccogli le informazioni necessarie per gestire la sua richiesta:
-- Nome e cognome
-- Email di contatto
-- Cosa vuole (prenotazione tavolo, appuntamento, ordine, informazioni...)
-- Per tavoli: data, ora, numero persone, allergie, occasione speciale
-- Per appuntamenti: tipo di servizio, data e ora preferita
-
-Quando hai tutto, conferma con un riepilogo e digli che sarà ricontattato a breve.
-
-Poi aggiungi alla fine su una riga separata (invisibile al cliente):
-DATI_RACCOLTI:{"nome":"...","email":"...","richiesta":"...","servizio":"...","dataISO":"YYYY-MM-DD","oraISO":"HH:MM","coperti":0,"allergie":"...","occasione":"..."}
-
-## REGOLE
-- Scrivi sempre in italiano
-- Sii caldo e professionale
-- Non inventare informazioni sul locale`
-}
 
 export async function POST(req: Request) {
   const { messages, publicId } = await req.json()
@@ -57,16 +15,10 @@ export async function POST(req: Request) {
   const owner = await prisma.user.findUnique({ where: { publicId } })
   if (!owner) return NextResponse.json({ error: 'Attività non trovata' }, { status: 404 })
 
-  const settings = {
-    nomeLocale: owner.nomeLocale,
-    descrizioneBot: owner.descrizioneBot,
-    orariApertura: owner.orariApertura,
-  }
-
   const response = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 600,
-    system: buildPublicSystemPrompt(settings),
+    system: buildSystemPrompt(owner),
     messages,
   })
 
@@ -79,17 +31,72 @@ export async function POST(req: Request) {
     try {
       const dati = JSON.parse(dataMatch[1])
       if (dati.nome && dati.email && dati.richiesta) {
+        // Controlla capienza per quella data se maxCoperti è configurato
+        let dataOccupata = false
+        if (dati.dataISO && owner.maxCoperti) {
+          const inizioGiorno = new Date(`${dati.dataISO}T00:00:00`)
+          const fineGiorno = new Date(`${dati.dataISO}T23:59:59`)
+          const appDelGiorno = await prisma.appuntamento.findMany({
+            where: { userId: owner.id, data: { gte: inizioGiorno, lte: fineGiorno }, status: { not: 'cancellato' } },
+            select: { coperti: true },
+          })
+          const copertiOccupati = appDelGiorno.reduce((s, a) => s + (a.coperti ?? 1), 0)
+          if (copertiOccupati + (dati.coperti || 1) > owner.maxCoperti) {
+            dataOccupata = true
+          }
+        }
+
+        if (dataOccupata) {
+          // Data piena → crea lead + preventivo lista_attesa + record lista attesa
+          const leadEsistente = await prisma.lead.findFirst({ where: { userId: owner.id, email: dati.email }, orderBy: { createdAt: 'desc' } })
+          const lead = leadEsistente ?? await prisma.lead.create({
+            data: { userId: owner.id, name: dati.nome, email: dati.email, notes: dati.richiesta, status: 'nuovo' },
+          })
+          const count = await prisma.preventivo.count({ where: { userId: owner.id } })
+          let note = 'Lista d\'attesa — data al completo.'
+          if (dati.dataISO) note += ` DATA_ISO:${dati.dataISO}`
+          if (dati.oraISO) note += ` ORA_ISO:${dati.oraISO}`
+          if (dati.coperti > 0) note += ` Coperti: ${dati.coperti}.`
+          const preventivo = await prisma.preventivo.create({
+            data: {
+              userId: owner.id, leadId: lead.id, numero: count + 1, tipo: 'tavolo',
+              clienteName: dati.nome, clienteEmail: dati.email,
+              items: JSON.stringify([{ descrizione: dati.servizio || dati.richiesta, coperti: dati.coperti || 1, prezzo: 0 }]),
+              totale: 0, status: 'lista_attesa', note,
+            },
+          })
+          await prisma.listaAttesa.create({
+            data: {
+              userId: owner.id, clienteNome: dati.nome, clienteEmail: dati.email,
+              data: new Date(dati.dataISO), ora: dati.oraISO || '00:00',
+              coperti: dati.coperti || 1, note: dati.richiesta,
+              status: 'in_attesa', preventivoId: preventivo.id, leadId: lead.id,
+            },
+          })
+          const rispostaAttesa = `Ho registrato la tua richiesta per il ${new Date(dati.dataISO).toLocaleDateString('it-IT', { day: 'numeric', month: 'long' })}. Purtroppo quella data risulta già al completo, ma ti abbiamo aggiunto in **lista d'attesa**: ti contatteremo appena si libera un posto. Riceverai una conferma via email. Grazie!`
+          const allMsgs = [...messages, { role: 'assistant', content: rispostaAttesa }]
+          await prisma.conversazione.create({
+            data: { userId: owner.id, canale: 'widget', messaggi: JSON.stringify(allMsgs), clienteNome: dati.nome, clienteEmail: dati.email },
+          })
+          return NextResponse.json({ text: rispostaAttesa, raccoltoDati: true, inListaAttesa: true })
+        }
+
         const leadEsistente = await prisma.lead.findFirst({
           where: { userId: owner.id, email: dati.email },
           orderBy: { createdAt: 'desc' },
         })
+
+        if (leadEsistente?.cancellato) {
+          await prisma.lead.update({
+            where: { id: leadEsistente.id },
+            data: { cancellato: false, status: 'nuovo' },
+          })
+        }
+
         const lead = leadEsistente ?? await prisma.lead.create({
           data: { userId: owner.id, name: dati.nome, email: dati.email, notes: dati.richiesta, status: 'nuovo' },
         })
-        const richiestaEsistente = await prisma.preventivo.findFirst({
-          where: { userId: owner.id, leadId: lead.id },
-        })
-        if (!richiestaEsistente) {
+        {
           const tipo = (() => {
             const s = (dati.servizio || dati.richiesta).toLowerCase()
             if (/tavolo|cena|pranzo|coperti|posto/.test(s)) return 'tavolo'
@@ -123,6 +130,12 @@ export async function POST(req: Request) {
               status: 'da_verificare', note,
             },
           })
+
+          // Ogni nuova richiesta riporta il lead a "nuovo" così appare in pipeline
+          await prisma.lead.update({
+            where: { id: lead.id },
+            data: { status: 'nuovo', cancellato: false },
+          })
         }
         // Salva conversazione
         const allMessages = [...messages, { role: 'assistant', content: visibleText }]
@@ -133,5 +146,5 @@ export async function POST(req: Request) {
     } catch (e) { console.error('[PUBLIC CHAT] errore salvataggio:', e) }
   }
 
-  return NextResponse.json({ text: visibleText })
+  return NextResponse.json({ text: visibleText, raccoltoDati: !!dataMatch })
 }

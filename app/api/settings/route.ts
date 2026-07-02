@@ -1,46 +1,60 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
+import { getAuthUser } from '@/lib/getAuthUser'
 import { prisma } from '@/lib/prisma'
 
-export async function GET() {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-  const user = await prisma.user.findUnique({ where: { clerkId: userId } })
-  if (!user) return NextResponse.json({ error: 'Utente non trovato' }, { status: 404 })
-  return NextResponse.json({
-    nomeLocale: user.nomeLocale,
-    descrizioneBot: user.descrizioneBot,
-    maxCoperti: user.maxCoperti,
-    orariApertura: user.orariApertura,
-    publicId: user.publicId,
-  })
+export async function GET(req: Request) {
+  try {
+    const user = await getAuthUser(req)
+    if (!user) return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
+    return NextResponse.json({
+      nomeLocale: user.nomeLocale,
+      indirizzo: user.indirizzo,
+      telefono: user.telefono,
+      sitoWeb: user.sitoWeb,
+      descrizioneBot: user.descrizioneBot,
+      maxCoperti: user.maxCoperti,
+      orariApertura: user.orariApertura,
+      publicId: user.publicId,
+      serviziOfferti: user.serviziOfferti,
+      regolePrenotazione: user.regolePrenotazione,
+      menuOfferta: user.menuOfferta,
+      pagamenti: user.pagamenti,
+      infoPratiche: user.infoPratiche,
+      faq: user.faq,
+    })
+  } catch (e) {
+    console.error('[SETTINGS GET]', e)
+    return NextResponse.json({ error: 'Errore server' }, { status: 500 })
+  }
 }
 
 export async function PATCH(req: Request) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-  const user = await prisma.user.findUnique({ where: { clerkId: userId } })
-  if (!user) return NextResponse.json({ error: 'Utente non trovato' }, { status: 404 })
+  try {
+    const user = await getAuthUser(req)
+    if (!user) return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
 
-  const data = await req.json()
-  const allowed = ['nomeLocale', 'descrizioneBot', 'maxCoperti', 'orariApertura', 'publicId']
-  const update: Record<string, unknown> = {}
-  for (const key of allowed) {
-    if (key in data) update[key] = data[key]
-  }
-
-  // Verifica unicità publicId (solo se valorizzato)
-  const pid = update.publicId as string | null | undefined
-  if (pid && pid.trim()) {
-    const existing = await prisma.user.findFirst({ where: { publicId: pid.trim() } })
-    if (existing && existing.id !== user.id) {
-      return NextResponse.json({ error: 'Questo ID pubblico è già in uso' }, { status: 409 })
+    const data = await req.json()
+    const allowed = ['nomeLocale', 'indirizzo', 'telefono', 'sitoWeb', 'descrizioneBot', 'maxCoperti', 'orariApertura', 'publicId', 'serviziOfferti', 'regolePrenotazione', 'menuOfferta', 'pagamenti', 'infoPratiche', 'faq']
+    const update: Record<string, unknown> = {}
+    for (const key of allowed) {
+      if (key in data) update[key] = data[key]
     }
-    update.publicId = pid.trim()
-  } else if (pid === '' || pid === null) {
-    update.publicId = null
-  }
 
-  const updated = await prisma.user.update({ where: { id: user.id }, data: update })
-  return NextResponse.json({ ok: true, user: updated })
+    const pid = update.publicId as string | null | undefined
+    if (pid && typeof pid === 'string' && pid.trim()) {
+      const existing = await prisma.user.findFirst({ where: { publicId: pid.trim() } })
+      if (existing && existing.id !== user.id) {
+        return NextResponse.json({ error: 'Questo ID pubblico è già in uso' }, { status: 409 })
+      }
+      update.publicId = pid.trim()
+    } else if (pid === '' || pid === null) {
+      update.publicId = null
+    }
+
+    await prisma.user.update({ where: { id: user.id }, data: update })
+    return NextResponse.json({ ok: true })
+  } catch (e) {
+    console.error('[SETTINGS PATCH]', e)
+    return NextResponse.json({ error: 'Errore server' }, { status: 500 })
+  }
 }

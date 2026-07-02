@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -18,12 +18,31 @@ model User {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  // Settings business
+  // Settings business — generali
   nomeLocale      String?
+  indirizzo       String?
+  telefono        String?
+  sitoWeb         String?
   descrizioneBot  String?
   maxCoperti      Int?
+  publicId        String?  @unique
+
+  // Orari e servizi
   orariApertura   String?  // JSON: { lun: "12:00-15:00,19:00-23:00", ... }
-  publicId        String?  @unique // slug pubblico per widget es. "ristorante-mario"
+  serviziOfferti  String?  // JSON: { tavolo: true, asporto: false, ... }
+
+  // Prenotazioni
+  regolePrenotazione String? // JSON: { preavvisoMin, copertiMin, copertiMax, durataMedia, walkIn, noteAggiuntive }
+
+  // Menu e offerta
+  menuOfferta     String?  // JSON: { tipoCucina, specialita, nonDisponibile, allergeniGestiti }
+
+  // Pagamenti e info pratiche
+  pagamenti       String?  // JSON: ["contanti","carta","satispay",...]
+  infoPratiche    String?  // JSON: { parcheggio, accessibile, animali, dresscode, altro }
+
+  // FAQ
+  faq             String?  // JSON: [{ domanda, risposta }, ...]
 
   leads            Lead[]
   contents         Content[]
@@ -31,6 +50,8 @@ model User {
   conversazioni    Conversazione[]
   appuntamenti     Appuntamento[]
   slotDisponibili  SlotDisponibile[]
+  tavoli           Tavolo[]
+  listaAttesa      ListaAttesa[]
 }
 
 model Lead {
@@ -73,6 +94,38 @@ model Appuntamento {
   coperti      Int      @default(1)
   allergie     String?
   occasione    String?
+  tavoloId     String?
+  createdAt    DateTime @default(now())
+
+  user   User    @relation(fields: [userId], references: [id])
+  tavolo Tavolo? @relation(fields: [tavoloId], references: [id])
+}
+
+model Tavolo {
+  id        String   @id @default(cuid())
+  userId    String
+  numero    Int
+  posti     Int
+  note      String?
+  createdAt DateTime @default(now())
+
+  user         User           @relation(fields: [userId], references: [id])
+  appuntamenti Appuntamento[]
+}
+
+model ListaAttesa {
+  id           String   @id @default(cuid())
+  userId       String
+  clienteNome  String
+  clienteEmail String?
+  clienteTel   String?
+  data         DateTime
+  ora          String
+  coperti      Int      @default(1)
+  note         String?
+  status       String   @default("in_attesa") // in_attesa, notificato, confermato, cancellato
+  preventivoId String?
+  leadId       String?
   createdAt    DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
@@ -104,19 +157,21 @@ model Conversazione {
 }
 
 model Preventivo {
-  id           String   @id @default(cuid())
-  userId       String
-  leadId       String?
-  numero       Int
-  tipo         String   @default("preventivo") // appuntamento, tavolo, ordine, servizio, preventivo
-  clienteName  String
-  clienteEmail String?
-  items        String
-  totale       Float
-  status       String   @default("bozza")
-  note         String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String   @id @default(cuid())
+  userId          String
+  leadId          String?
+  numero          Int
+  tipo            String   @default("preventivo") // appuntamento, tavolo, ordine, servizio, preventivo
+  clienteName     String
+  clienteEmail    String?
+  items           String
+  totale          Float
+  status          String   @default("bozza")
+  note            String?
+  tokenRisposta   String?  @unique // token per link accetta/rifiuta nel email
+  messaggioProposta String? // messaggio personalizzato nella proposta
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id])
 }
