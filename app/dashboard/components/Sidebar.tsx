@@ -98,7 +98,7 @@ export default function Sidebar({ open }: SidebarProps) {
             return (
               <Link
                 key={item.href}
-                href={item.href}
+                href={item.href!}
                 className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                   active
                     ? 'bg-indigo-50 text-indigo-700'
