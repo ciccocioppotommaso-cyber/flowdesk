@@ -1,8 +1,25 @@
 import { Resend } from 'resend'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
+const EMAIL_DISABLED = process.env.DISABLE_EMAIL === 'true'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+
+export async function sendEmailStaff(email: string, nome: string, link: string) {
+  if (EMAIL_DISABLED || !process.env.RESEND_API_KEY) {
+    console.log(`[EMAIL STAFF] Link per ${nome}: ${link}`)
+    return
+  }
+  await resend.emails.send({
+    from: 'Flowest Staff <info@flowest.it>',
+    to: email,
+    subject: 'Il tuo link di accesso staff',
+    html: `<p>Ciao <strong>${nome}</strong>,</p>
+    <p>Clicca il link qui sotto per accedere alla tua area personale:</p>
+    <p><a href="${link}" style="background:#4F46E5;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;">Accedi all'area staff</a></p>
+    <p style="color:#6b7280;font-size:13px;">Il link e valido per 24 ore.</p>`,
+  })
+}
 
 interface EmailConfermaParams {
   clienteEmail: string
@@ -69,8 +86,6 @@ function wrapEmail(nomeLocale: string, headerColor: string, headerEmoji: string,
 </html>`
 }
 
-const EMAIL_DISABLED = process.env.DISABLE_EMAIL === 'true'
-
 export async function sendEmailConferma(params: EmailConfermaParams) {
   if (EMAIL_DISABLED || !process.env.RESEND_API_KEY || !params.clienteEmail) return
   const isTavolo = params.tipo === 'tavolo'
@@ -94,7 +109,7 @@ export async function sendEmailConferma(params: EmailConfermaParams) {
   )
 
   await resend.emails.send({
-    from: `${params.nomeLocale} <onboarding@resend.dev>`,
+    from: `${params.nomeLocale} <info@flowest.it>`,
     to: params.clienteEmail,
     subject: isTavolo ? `Prenotazione confermata — ${params.nomeLocale}` : `Appuntamento confermato — ${params.nomeLocale}`,
     html,
@@ -137,7 +152,7 @@ export async function sendEmailProposta(params: EmailPropostaParams) {
   )
 
   await resend.emails.send({
-    from: `${params.nomeLocale} <onboarding@resend.dev>`,
+    from: `${params.nomeLocale} <info@flowest.it>`,
     to: params.clienteEmail,
     subject: `Proposta di modifica — ${params.nomeLocale}`,
     html,
@@ -161,7 +176,7 @@ export async function sendEmailRifiuto(params: EmailRifiutoParams) {
   )
 
   await resend.emails.send({
-    from: `${params.nomeLocale} <onboarding@resend.dev>`,
+    from: `${params.nomeLocale} <info@flowest.it>`,
     to: params.clienteEmail,
     subject: `${params.nomeLocale} — risposta alla tua richiesta`,
     html,

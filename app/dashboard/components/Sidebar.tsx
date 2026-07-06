@@ -35,6 +35,7 @@ const navigation = [
     items: [
       { label: 'Tavoli', href: '/dashboard/tavoli', icon: '🪑' },
       { label: 'Analytics', href: '/dashboard/analytics', icon: '📊' },
+      { label: 'Staff', href: '/dashboard/staff', icon: '👥' },
     ],
   },
   {
