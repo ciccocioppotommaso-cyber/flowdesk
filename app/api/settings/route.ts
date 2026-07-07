@@ -23,6 +23,7 @@ export async function GET(req: Request) {
       faq: user.faq,
       turniServizio: user.turniServizio,
       fabbisognoStaff: user.fabbisognoStaff,
+      mapElementi: user.mapElementi,
     })
   } catch (e) {
     console.error('[SETTINGS GET]', e)
