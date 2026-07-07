@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
 
 const SETTORI = [
   'Ristorazione', 'Biomedica', 'Consulenza', 'E-commerce',
@@ -15,14 +14,9 @@ const GIORNI_LABEL: Record<string, string> = {
   ven: 'Venerdì', sab: 'Sabato', dom: 'Domenica',
 }
 
-const GIORNI_LUNGHI = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica']
-const GIORNI_BREVI = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom']
-
 const SEZIONI = [
   { id: 'generale', label: '🏠 Locale' },
   { id: 'orari', label: '🕐 Orari' },
-  { id: 'turni', label: '🔄 Turni' },
-  { id: 'staff', label: '👥 Staff' },
   { id: 'servizi', label: '⚙️ Servizi' },
   { id: 'prenotazioni', label: '📅 Prenotazioni' },
   { id: 'menu', label: '🍽️ Menu & Offerta' },
@@ -32,9 +26,6 @@ const SEZIONI = [
   { id: 'bot', label: '🤖 Bot' },
   { id: 'account', label: '👤 Account' },
 ]
-
-interface TurnoServizio { id: string; nome: string; oraInizio: string; oraFine: string }
-interface FabbisognoFascia { giorno: number; oraInizio: string; oraFine: string; persone: number; ruolo: string; fascia: string }
 
 const SERVIZI_LISTA = [
   { id: 'tavolo', label: 'Prenotazione tavolo', icon: '🪑' },
@@ -75,8 +66,7 @@ type SezioneStatus = { saving: boolean; saved: boolean; dirty: boolean }
 const initStatus = (): SezioneStatus => ({ saving: false, saved: false, dirty: false })
 
 export default function Impostazioni() {
-  const searchParams = useSearchParams()
-  const [sezioneAttiva, setSezioneAttiva] = useState(() => searchParams.get('sezione') ?? 'generale')
+  const [sezioneAttiva, setSezioneAttiva] = useState('generale')
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState<Record<string, SezioneStatus>>(() =>
     Object.fromEntries(SEZIONI.map(s => [s.id, initStatus()]))
@@ -99,8 +89,6 @@ export default function Impostazioni() {
   const [faq, setFaq] = useState<Faq[]>([])
   const [descrizioneBot, setDescrizioneBot] = useState('')
   const [publicId, setPublicId] = useState('')
-  const [turniServizio, setTurniServizio] = useState<TurnoServizio[]>([])
-  const [fabbisogno, setFabbisogno] = useState<FabbisognoFascia[]>([])
 
   // Marca la sezione come dirty quando l'utente modifica qualcosa
   const dirty = useCallback((id: string) => {
@@ -127,8 +115,6 @@ export default function Impostazioni() {
       setFaq(jp(s.faq, []))
       setDescrizioneBot(s.descrizioneBot ?? '')
       setPublicId(s.publicId ?? '')
-      setTurniServizio(jp(s.turniServizio, []))
-      setFabbisogno(jp(s.fabbisognoStaff, []))
       // Marca come salvato solo le sezioni che hanno dati nel DB
       setStatus(prev => ({
         ...prev,
@@ -140,8 +126,6 @@ export default function Impostazioni() {
         pagamenti: { saving: false, saved: !!s.pagamenti, dirty: false },
         info: { saving: false, saved: !!s.infoPratiche, dirty: false },
         faq: { saving: false, saved: !!s.faq, dirty: false },
-        turni: { saving: false, saved: !!s.turniServizio, dirty: false },
-        staff: { saving: false, saved: !!s.fabbisognoStaff, dirty: false },
         bot: { saving: false, saved: !!s.descrizioneBot, dirty: false },
         account: { saving: false, saved: !!(profile.user?.name), dirty: false },
       }))
@@ -242,119 +226,6 @@ export default function Impostazioni() {
                 ))}
               </div>
               <p className="text-xs text-gray-400 mt-2">Lascia vuoto se chiuso quel giorno</p>
-            </Section>
-          )}
-
-          {sezioneAttiva === 'turni' && (
-            <Section title="Turni di servizio" subtitle="Definisci i turni della giornata. Verranno usati nella mappa tavoli per filtrare le prenotazioni per fascia oraria."
-              onSave={() => saveSezione('turni', { turniServizio: JSON.stringify(turniServizio) })}
-              status={st('turni')}>
-              <div className="space-y-3">
-                {turniServizio.length === 0 && (
-                  <p className="text-sm text-gray-400 text-center py-3">Nessun turno configurato. Aggiungine uno.</p>
-                )}
-                {turniServizio.map((t, i) => (
-                  <div key={t.id} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Turno {i + 1}</span>
-                      <button onClick={() => { setTurniServizio(prev => prev.filter((_, j) => j !== i)); dirty('turni') }}
-                        className="text-xs text-red-400 hover:text-red-600 font-medium">Rimuovi</button>
-                    </div>
-                    <div className="grid grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Nome turno</label>
-                        <input type="text" value={t.nome}
-                          onChange={e => { setTurniServizio(prev => prev.map((x, j) => j === i ? { ...x, nome: e.target.value } : x)); dirty('turni') }}
-                          placeholder="es. Pranzo" className={cls} />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Inizio</label>
-                        <input type="time" value={t.oraInizio}
-                          onChange={e => { setTurniServizio(prev => prev.map((x, j) => j === i ? { ...x, oraInizio: e.target.value } : x)); dirty('turni') }}
-                          className={cls} />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Fine</label>
-                        <input type="time" value={t.oraFine}
-                          onChange={e => { setTurniServizio(prev => prev.map((x, j) => j === i ? { ...x, oraFine: e.target.value } : x)); dirty('turni') }}
-                          className={cls} />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                <button onClick={() => {
-                  setTurniServizio(prev => [...prev, { id: crypto.randomUUID(), nome: '', oraInizio: '12:00', oraFine: '15:00' }])
-                  dirty('turni')
-                }} className="w-full text-sm text-indigo-600 font-semibold border-2 border-dashed border-indigo-200 rounded-xl py-3 hover:bg-indigo-50 transition-colors">
-                  + Aggiungi turno
-                </button>
-                {turniServizio.length > 0 && (
-                  <div className="bg-indigo-50 border border-indigo-100 rounded-lg px-4 py-3 text-xs text-indigo-700 space-y-1">
-                    <p className="font-semibold">Turni configurati:</p>
-                    {turniServizio.map(t => (
-                      <p key={t.id}>{t.nome || '(senza nome)'} — {t.oraInizio}–{t.oraFine}</p>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </Section>
-          )}
-
-          {sezioneAttiva === 'staff' && (
-            <Section title="Fabbisogno staff settimanale" subtitle="Definisci quante persone ti servono, con quale ruolo e in quali orari per ogni giorno della settimana. Queste impostazioni vengono usate dall'AI per generare i turni."
-              onSave={() => saveSezione('staff', { fabbisognoStaff: JSON.stringify(fabbisogno) })}
-              status={st('staff')}>
-              <div className="space-y-3">
-                {fabbisogno.length === 0 && (
-                  <p className="text-sm text-gray-400 text-center py-3">Nessuna fascia configurata. Aggiungi le tue esigenze di personale.</p>
-                )}
-                {fabbisogno.length > 0 && (
-                  <div className="grid grid-cols-[130px_80px_80px_60px_1fr_auto] gap-2 px-1 mb-1">
-                    {['Giorno', 'Dalle', 'Alle', 'N°', 'Ruolo', ''].map((h, i) => (
-                      <span key={i} className="text-xs font-semibold text-gray-400 uppercase">{h}</span>
-                    ))}
-                  </div>
-                )}
-                {fabbisogno.map((r, i) => (
-                  <div key={i} className="grid grid-cols-[130px_80px_80px_60px_1fr_auto] gap-2 items-center bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
-                    <select value={r.giorno}
-                      onChange={e => { setFabbisogno(f => f.map((x, idx) => idx === i ? { ...x, giorno: Number(e.target.value) } : x)); dirty('staff') }}
-                      className={cls}>
-                      {GIORNI_LUNGHI.map((g, idx) => <option key={idx} value={idx}>{g}</option>)}
-                    </select>
-                    <input type="time" value={r.oraInizio}
-                      onChange={e => { setFabbisogno(f => f.map((x, idx) => idx === i ? { ...x, oraInizio: e.target.value } : x)); dirty('staff') }}
-                      className={cls} />
-                    <input type="time" value={r.oraFine}
-                      onChange={e => { setFabbisogno(f => f.map((x, idx) => idx === i ? { ...x, oraFine: e.target.value } : x)); dirty('staff') }}
-                      className={cls} />
-                    <input type="number" min={1} max={20} value={r.persone}
-                      onChange={e => { setFabbisogno(f => f.map((x, idx) => idx === i ? { ...x, persone: Number(e.target.value) } : x)); dirty('staff') }}
-                      className={cls} />
-                    <input placeholder="es. cameriere, chef..." value={r.ruolo}
-                      onChange={e => { setFabbisogno(f => f.map((x, idx) => idx === i ? { ...x, ruolo: e.target.value } : x)); dirty('staff') }}
-                      className={cls} />
-                    <button onClick={() => { setFabbisogno(f => f.filter((_, idx) => idx !== i)); dirty('staff') }}
-                      className="text-gray-300 hover:text-red-500 font-bold text-sm transition-colors px-1">✕</button>
-                  </div>
-                ))}
-                <button onClick={() => { setFabbisogno(f => [...f, { giorno: 0, fascia: 'libera', oraInizio: '09:00', oraFine: '17:00', persone: 1, ruolo: '' }]); dirty('staff') }}
-                  className="w-full text-sm text-indigo-600 font-semibold border-2 border-dashed border-indigo-200 rounded-xl py-3 hover:bg-indigo-50 transition-colors">
-                  + Aggiungi fascia
-                </button>
-                {fabbisogno.length > 0 && (
-                  <div className="bg-indigo-50 border border-indigo-100 rounded-lg px-4 py-3 text-xs text-indigo-700 space-y-1">
-                    <p className="font-semibold mb-1">Riepilogo:</p>
-                    {[0,1,2,3,4,5,6].map(g => {
-                      const fasce = fabbisogno.filter(r => r.giorno === g)
-                      if (fasce.length === 0) return null
-                      return (
-                        <p key={g}><span className="font-medium">{GIORNI_BREVI[g]}:</span> {fasce.map(r => `${r.oraInizio}–${r.oraFine} · ${r.persone}p${r.ruolo ? ` (${r.ruolo})` : ''}`).join(' / ')}</p>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
             </Section>
           )}
 

@@ -15,9 +15,9 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const user = await getAuthUser(req)
   if (!user) return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
-  const { numero, etichetta, posti, note } = await req.json()
+  const { numero, posti, note } = await req.json()
   const tavolo = await prisma.tavolo.create({
-    data: { userId: user.id, numero, etichetta: etichetta || null, posti: posti ?? 4, note: note || null },
+    data: { userId: user.id, numero, posti: posti ?? 2, note },
   })
   return NextResponse.json({ tavolo })
 }

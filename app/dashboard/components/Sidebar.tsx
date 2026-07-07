@@ -33,9 +33,7 @@ const navigation = [
   {
     section: 'Gestione',
     items: [
-      { label: 'Menu', href: '/dashboard/menu', icon: '🍽️' },
-      { label: 'Ordini', href: '/dashboard/ordini', icon: '🧾' },
-      { label: 'Tavoli & QR', href: '/dashboard/tavoli', icon: '🪑' },
+      { label: 'Tavoli', href: '/dashboard/tavoli', icon: '🪑' },
       { label: 'Analytics', href: '/dashboard/analytics', icon: '📊' },
       { label: 'Staff', href: '/dashboard/staff', icon: '👥' },
     ],

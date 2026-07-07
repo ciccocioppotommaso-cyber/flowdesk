@@ -135,7 +135,7 @@ export default function Calendario() {
     if (res.ok && tavoliIdsForPost.length >= 2) {
       const created = await res.json()
       if (created.appuntamento?.id) {
-        await fetch(`/api/appuntamenti/${created.id}`, {
+        await fetch(`/api/appuntamenti/${created.appuntamento.id}`, {
           method: 'PATCH', credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tavoliIds: tavoliIdsForPost }),

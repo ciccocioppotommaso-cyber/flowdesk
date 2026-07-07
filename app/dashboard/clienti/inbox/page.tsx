@@ -46,11 +46,7 @@ export default function Inbox() {
     setLoading(false)
   }
 
-  useEffect(() => {
-    fetchConversazioni()
-    const interval = setInterval(fetchConversazioni, 15000)
-    return () => clearInterval(interval)
-  }, [])
+  useEffect(() => { fetchConversazioni() }, [])
 
   // Scroll al fondo quando si apre una chat o arrivano nuovi messaggi
   useEffect(() => {
