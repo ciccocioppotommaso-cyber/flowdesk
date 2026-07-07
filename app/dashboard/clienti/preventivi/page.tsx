@@ -287,10 +287,13 @@ function PropostaModificaModal({ richiesta, onClose, onInvia }: {
   )
 }
 
+interface TavoloBasic { id: string; numero: number; posti: number; note: string | null }
+interface AppBasic { id: string; data: string; durata: number; status: string; tavoloId?: string | null; tavoliIds?: string | null }
+
 function ConfermaAppuntamentoModal({ richiesta, onClose, onConferma }: {
   richiesta: Richiesta
   onClose: () => void
-  onConferma: (data: string, ora: string, servizio: string, durata: number, coperti?: number, allergie?: string, occasione?: string) => void
+  onConferma: (data: string, ora: string, servizio: string, durata: number, coperti?: number, allergie?: string, occasione?: string, tavoliIds?: string[]) => void
 }) {
   const isTavolo = richiesta.tipo === 'tavolo'
   const items = JSON.parse(richiesta.items) as ItemExt[]
@@ -308,6 +311,18 @@ function ConfermaAppuntamentoModal({ richiesta, onClose, onConferma }: {
   const [coperti, setCoperti] = useState(String(items[0]?.coperti ?? copertiNote?.[1] ?? '2'))
   const [allergie, setAllergie] = useState(items[0]?.allergie ?? allergieNote?.[1]?.trim() ?? '')
   const [occasione, setOccasione] = useState(items[0]?.occasione ?? occasioneNote?.[1]?.trim() ?? '')
+  const [tavoli, setTavoli] = useState<TavoloBasic[]>([])
+  const [selectedTavoliIds, setSelectedTavoliIds] = useState<string[]>([])
+  const [appuntamenti, setAppuntamenti] = useState<AppBasic[]>([])
+
+  useEffect(() => {
+    fetch('/api/tavoli', { credentials: 'include' })
+      .then(r => r.json())
+      .then(d => setTavoli(d.tavoli ?? []))
+    fetch('/api/appuntamenti', { credentials: 'include' })
+      .then(r => r.json())
+      .then(d => setAppuntamenti(d.appuntamenti ?? []))
+  }, [])
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -385,9 +400,50 @@ function ConfermaAppuntamentoModal({ richiesta, onClose, onConferma }: {
             </div>
           )}
         </div>
+        {tavoli.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">Tavoli (opzionale)</label>
+              {selectedTavoliIds.length >= 2 && (
+                <span className="text-xs font-bold text-orange-600">
+                  T{tavoli.filter(t => selectedTavoliIds.includes(t.id)).sort((a,b)=>a.numero-b.numero).map(t=>t.numero).join('+')} — verranno fusi
+                </span>
+              )}
+            </div>
+            <div className="space-y-1.5 max-h-40 overflow-y-auto">
+              {tavoli.map(t => {
+                const checked = selectedTavoliIds.includes(t.id)
+                const selStart = data && ora ? new Date(`${data}T${ora}`).getTime() : null
+                const selEnd = selStart ? selStart + durata * 60000 : null
+                const occupato = !checked && selStart !== null && selEnd !== null && appuntamenti.some(a => {
+                  if (a.status === 'cancellato') return false
+                  const usaTavolo = a.tavoloId === t.id || (() => { try { return (JSON.parse(a.tavoliIds ?? '[]') as string[]).includes(t.id) } catch { return false } })()
+                  if (!usaTavolo) return false
+                  const aStart = new Date(a.data).getTime()
+                  const aEnd = aStart + a.durata * 60000
+                  return aStart < selEnd! && selStart! < aEnd
+                })
+                return (
+                  <label key={t.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg border transition-colors ${
+                    occupato ? 'border-red-200 bg-red-50 cursor-not-allowed opacity-60' : checked ? 'border-indigo-300 bg-indigo-50 cursor-pointer' : 'border-gray-200 hover:bg-gray-50 cursor-pointer'
+                  }`}>
+                    <input type="checkbox" checked={checked} disabled={occupato}
+                      onChange={e => setSelectedTavoliIds(prev => e.target.checked ? [...prev, t.id] : prev.filter(id => id !== t.id))}
+                      className="accent-indigo-600 w-4 h-4 shrink-0" />
+                    <span className="text-sm text-gray-700 flex-1">
+                      <span className="font-semibold">T{t.numero}</span>
+                      <span className="text-gray-400"> · {t.posti} posti{t.note ? ` · ${t.note}` : ''}</span>
+                    </span>
+                    {occupato && <span className="text-xs text-red-500 font-medium">occupato</span>}
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+        )}
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 border border-gray-300 text-gray-700 font-semibold py-2.5 rounded-lg hover:bg-gray-50">Salta</button>
-          <button onClick={() => onConferma(data, ora, servizio, durata, parseInt(coperti) || undefined, allergie || undefined, occasione || undefined)}
+          <button onClick={() => onConferma(data, ora, servizio, durata, parseInt(coperti) || undefined, allergie || undefined, occasione || undefined, selectedTavoliIds.length > 0 ? selectedTavoliIds : undefined)}
             disabled={!data}
             className="flex-1 bg-green-600 text-white font-semibold py-2.5 rounded-lg hover:bg-green-700 disabled:opacity-40">
             Aggiungi al calendario
@@ -432,7 +488,11 @@ function Richieste() {
     }
   }
 
-  useEffect(() => { fetchRichieste() }, [])
+  useEffect(() => {
+    fetchRichieste()
+    const interval = setInterval(fetchRichieste, 15000)
+    return () => clearInterval(interval)
+  }, [])
 
   async function handleSave(form: object) {
     try {
@@ -499,9 +559,9 @@ function Richieste() {
     setSelected(prev => prev ? { ...prev, status } : null)
   }
 
-  async function handleConfermaAppuntamento(data: string, ora: string, servizio: string, durata: number, coperti?: number, allergie?: string, occasione?: string) {
+  async function handleConfermaAppuntamento(data: string, ora: string, servizio: string, durata: number, coperti?: number, allergie?: string, occasione?: string, tavoliIds?: string[]) {
     if (!confermaApp) return
-    await fetch('/api/appuntamenti', {
+    const res = await fetch('/api/appuntamenti', {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -516,6 +576,17 @@ function Richieste() {
         occasione,
       }),
     })
+    if (tavoliIds && tavoliIds.length > 0 && res.ok) {
+      const newApp = await res.json()
+      const appId = newApp.appuntamento?.id
+      if (appId) {
+        await fetch(`/api/appuntamenti/${appId}`, {
+          method: 'PATCH', credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tavoliIds }),
+        })
+      }
+    }
     setConfermaApp(null)
   }
 
@@ -893,7 +964,7 @@ function Richieste() {
         <ConfermaAppuntamentoModal
           richiesta={confermaApp}
           onClose={() => setConfermaApp(null)}
-          onConferma={(d, o, s, dur, cop, all, occ) => handleConfermaAppuntamento(d, o, s, dur, cop, all, occ)}
+          onConferma={(d, o, s, dur, cop, all, occ, tids) => handleConfermaAppuntamento(d, o, s, dur, cop, all, occ, tids)}
         />
       )}
     </div>

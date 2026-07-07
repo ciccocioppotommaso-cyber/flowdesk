@@ -21,6 +21,8 @@ export async function GET(req: Request) {
       pagamenti: user.pagamenti,
       infoPratiche: user.infoPratiche,
       faq: user.faq,
+      turniServizio: user.turniServizio,
+      fabbisognoStaff: user.fabbisognoStaff,
     })
   } catch (e) {
     console.error('[SETTINGS GET]', e)
@@ -34,7 +36,7 @@ export async function PATCH(req: Request) {
     if (!user) return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
 
     const data = await req.json()
-    const allowed = ['nomeLocale', 'indirizzo', 'telefono', 'sitoWeb', 'descrizioneBot', 'maxCoperti', 'orariApertura', 'publicId', 'serviziOfferti', 'regolePrenotazione', 'menuOfferta', 'pagamenti', 'infoPratiche', 'faq']
+    const allowed = ['nomeLocale', 'indirizzo', 'telefono', 'sitoWeb', 'descrizioneBot', 'maxCoperti', 'orariApertura', 'publicId', 'serviziOfferti', 'regolePrenotazione', 'menuOfferta', 'pagamenti', 'infoPratiche', 'faq', 'menuLogoUrl', 'menuColoreP', 'menuColoreS', 'turniServizio', 'fabbisognoStaff']
     const update: Record<string, unknown> = {}
     for (const key of allowed) {
       if (key in data) update[key] = data[key]
