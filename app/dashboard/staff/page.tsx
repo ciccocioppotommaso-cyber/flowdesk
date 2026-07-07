@@ -173,7 +173,23 @@ export default function StaffPage() {
   }
 
   useEffect(() => { fetchFabbisogno() }, [])
-  useEffect(() => { setFabbisognoSett(fabbisogno) }, [fabbisogno])
+
+  // Quando cambia settimana o template: carica da localStorage se esiste, altrimenti usa template
+  useEffect(() => {
+    const key = `fabb_${toISO(settimana)}`
+    const saved = localStorage.getItem(key)
+    if (saved) {
+      try { setFabbisognoSett(JSON.parse(saved)); return } catch {}
+    }
+    setFabbisognoSett(fabbisogno)
+  }, [settimana, fabbisogno])
+
+  // Salva fabbisognoSett in localStorage ogni volta che cambia
+  useEffect(() => {
+    const key = `fabb_${toISO(settimana)}`
+    localStorage.setItem(key, JSON.stringify(fabbisognoSett))
+  }, [fabbisognoSett, settimana])
+
   useEffect(() => { fetchAll(); fetchDisp(settimana) }, [settimana])
   useEffect(() => { if (vistaTurni === 'mese') fetchTurniMese() }, [meseCal, vistaTurni])
 
@@ -768,7 +784,7 @@ export default function StaffPage() {
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-gray-600">Fabbisogno per questa settimana <span className="font-normal text-gray-400">(copia del template, modificabile)</span></p>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setFabbisognoSett(fabbisogno)}
+                  <button onClick={() => { localStorage.removeItem(`fabb_${toISO(settimana)}`); setFabbisognoSett(fabbisogno) }}
                     className="text-xs text-gray-400 hover:text-indigo-600 font-medium transition-colors">↺ Ripristina</button>
                   <button onClick={() => setFabbisognoSett(s => [...s, { giorno: 0, fascia: 'libera', oraInizio: '09:00', oraFine: '17:00', persone: 1, ruolo: '' }])}
                     className="text-xs px-2.5 py-1 bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 font-medium">+ Aggiungi</button>
