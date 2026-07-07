@@ -178,18 +178,21 @@ export default function StaffPage() {
 
   // Quando arriva il template dalle impostazioni: carica da localStorage se esiste, altrimenti usa template
   useEffect(() => {
-    if (!fabbisognoLoaded.current) return
+    if (fabbisogno.length === 0) return
     const key = `fabb_${toISO(settimana)}`
     const saved = localStorage.getItem(key)
     if (saved) {
-      try { setFabbisognoSett(JSON.parse(saved)); return } catch {}
+      try {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed) && parsed.length > 0) { setFabbisognoSett(parsed); return }
+      } catch {}
     }
     setFabbisognoSett(fabbisogno)
   }, [settimana, fabbisogno])
 
-  // Salva fabbisognoSett in localStorage solo dopo che il template è stato caricato
+  // Salva fabbisognoSett in localStorage quando viene modificato dall'utente
   useEffect(() => {
-    if (!fabbisognoLoaded.current) return
+    if (fabbisognoSett.length === 0) return
     const key = `fabb_${toISO(settimana)}`
     localStorage.setItem(key, JSON.stringify(fabbisognoSett))
   }, [fabbisognoSett, settimana])

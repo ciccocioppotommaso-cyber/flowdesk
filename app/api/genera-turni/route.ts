@@ -104,7 +104,10 @@ ${dateSettimana.map((d, i) => `- giorno ${i} (${GIORNI[i]}): ${d}`).join('\n')}
 2. Non assegnare turni in giornate con assenza approvata
 3. Distribuisci i turni in modo equo
 4. Se un dipendente non ha dichiarato disponibilità, assegnalo solo se strettamente necessario
-5. Rispondi SOLO con JSON valido, senza testo aggiuntivo:
+5. **NON assegnare mai la stessa persona a due turni sovrapposti nello stesso giorno** — controlla gli orari e usa persone diverse per coprire turni contemporanei
+6. Se non ci sono abbastanza dipendenti disponibili per coprire il fabbisogno, segnalalo nella spiegazione indicando quale giorno/fascia è scoperta e di quante persone manca
+7. Assegna i dipendenti in base al loro ruolo quando specificato nel fabbisogno
+8. Rispondi SOLO con JSON valido, senza testo aggiuntivo:
 
 {
   "turni": [
