@@ -19,6 +19,7 @@ interface Appuntamento {
   allergie?: string
   occasione?: string
   tavoloId?: string | null
+  tavoliIds?: string | null
 }
 
 interface Tavolo {
@@ -67,6 +68,8 @@ export default function Calendario() {
 
   const [tavoli, setTavoli] = useState<Tavolo[]>([])
   const [formApp, setFormApp] = useState({ clienteNome: '', clienteEmail: '', servizio: '', data: '', ora: '20:00', durata: 120, note: '', coperti: 2, allergie: '', occasione: '', tavoloId: '' })
+  const [selectedTavoliIds, setSelectedTavoliIds] = useState<string[]>([])
+  const [assegnaLoading, setAssegnaLoading] = useState(false)
 
   const today = new Date()
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
@@ -80,10 +83,9 @@ export default function Calendario() {
     const dataTavoli = await resTavoli.json()
     setAppuntamenti(dataApp.appuntamenti ?? [])
     setTavoli(dataTavoli.tavoli ?? [])
-    setLoading(false)
   }
 
-  useEffect(() => { fetchAll() }, [])
+  useEffect(() => { fetchAll().finally(() => setLoading(false)) }, [])
 
   function appForDay(day: Date) {
     return appuntamenti
@@ -112,11 +114,30 @@ export default function Calendario() {
   }
 
   async function handleSaveApp() {
-    await fetch('/api/appuntamenti', {
+    // Determina se tavoloId è un singolo ID o un JSON array di più tavoli
+    let tavoliIdsForPost: string[] = []
+    let tavoloIdForPost: string = ''
+    try {
+      const parsed = JSON.parse(formApp.tavoloId)
+      if (Array.isArray(parsed)) { tavoliIdsForPost = parsed; tavoloIdForPost = parsed.length === 1 ? parsed[0] : '' }
+      else { tavoloIdForPost = formApp.tavoloId }
+    } catch { tavoloIdForPost = formApp.tavoloId }
+
+    const res = await fetch('/api/appuntamenti', {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...formApp, data: new Date(`${formApp.data}T${formApp.ora}`).toISOString() }),
+      body: JSON.stringify({ ...formApp, tavoloId: tavoloIdForPost || null, data: new Date(`${formApp.data}T${formApp.ora}`).toISOString() }),
     })
+    if (res.ok && tavoliIdsForPost.length >= 2) {
+      const created = await res.json()
+      if (created.appuntamento?.id) {
+        await fetch(`/api/appuntamenti/${created.id}`, {
+          method: 'PATCH', credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tavoliIds: tavoliIdsForPost }),
+        })
+      }
+    } else if (!res.ok) { await res.json() }
     setShowNuovo(false)
     setFormApp({ clienteNome: '', clienteEmail: '', servizio: '', data: '', ora: '20:00', durata: 120, note: '', coperti: 2, allergie: '', occasione: '', tavoloId: '' })
     await fetchAll()
@@ -143,6 +164,31 @@ export default function Calendario() {
       if (inAttesaPerData.length > 0) {
         setAttesaBanner({ count: inAttesaPerData.length, data: dataStr })
       }
+    }
+  }
+
+  async function handleAssegnaTavoli(id: string, ids: string[]) {
+    setAssegnaLoading(true)
+    try {
+      const res = await fetch(`/api/appuntamenti/${id}`, {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tavoliIds: ids }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        if (err.conflitto) alert('⚠️ Uno dei tavoli è già occupato in questo orario.')
+        else alert('Errore nel salvataggio. Riprova.')
+      } else {
+        await fetchAll()
+        setSelected(prev => {
+          if (!prev) return null
+          const tavoloId = ids.length === 1 ? ids[0] : null
+          return { ...prev, tavoliIds: JSON.stringify(ids), tavoloId }
+        })
+      }
+    } finally {
+      setAssegnaLoading(false)
     }
   }
 
@@ -328,7 +374,8 @@ export default function Calendario() {
                       {dayApps.map(a => {
                         const c = STATUS_COLORS[a.status] ?? STATUS_COLORS.confermato
                         const ora = new Date(a.data).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-                        const tavolo = a.tavoloId ? tavoli.find(t => t.id === a.tavoloId) : null
+                        const tavoliIds: string[] = (() => { try { return a.tavoliIds ? JSON.parse(a.tavoliIds) : (a.tavoloId ? [a.tavoloId] : []) } catch { return a.tavoloId ? [a.tavoloId] : [] } })()
+                        const tavoliApp = tavoli.filter(t => tavoliIds.includes(t.id)).sort((x,y)=>x.numero-y.numero)
                         return (
                           <div key={a.id} onClick={() => setSelected(a)}
                             className={`${c.bg} ${c.text} rounded-lg px-2 py-1.5 cursor-pointer hover:opacity-80 transition-opacity`}>
@@ -336,7 +383,7 @@ export default function Calendario() {
                             <p className="text-[11px] font-semibold truncate leading-tight">{a.clienteNome || 'Cliente'}</p>
                             <div className="flex gap-1.5 flex-wrap mt-0.5">
                               {(a.coperti ?? 1) > 1 && <p className="text-[10px] opacity-70">🪑 {a.coperti}</p>}
-                              {tavolo && <p className="text-[10px] opacity-70">T{tavolo.numero}</p>}
+                              {tavoliApp.length > 0 && <p className="text-[10px] opacity-70">T{tavoliApp.map(t=>t.numero).join('+')}</p>}
                             </div>
                           </div>
                         )
@@ -497,7 +544,13 @@ export default function Calendario() {
       })()}
 
       {/* ── MODALE DETTAGLIO APPUNTAMENTO ── */}
-      {selected && (
+      {selected && (() => {
+        // Inizializza selectedTavoliIds alla prima apertura
+        const tavoliAssegnati: string[] = (() => {
+          try { return selected.tavoliIds ? JSON.parse(selected.tavoliIds) : (selected.tavoloId ? [selected.tavoloId] : []) }
+          catch { return selected.tavoloId ? [selected.tavoloId] : [] }
+        })()
+        return (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md flex flex-col overflow-hidden" style={{ maxHeight: '85vh' }}>
             <div className="px-5 py-4 border-b border-gray-100 flex items-start justify-between">
@@ -505,7 +558,7 @@ export default function Calendario() {
                 <h2 className="text-base font-bold text-gray-900">{selected.clienteNome || 'Appuntamento'}</h2>
                 {selected.clienteEmail && <p className="text-xs text-gray-400">{selected.clienteEmail}</p>}
               </div>
-              <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600 text-xl mt-1">✕</button>
+              <button onClick={() => { setSelected(null); setSelectedTavoliIds([]) }} className="text-gray-400 hover:text-gray-600 text-xl mt-1">✕</button>
             </div>
             <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
               <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 space-y-1.5">
@@ -517,7 +570,12 @@ export default function Calendario() {
                 </p>
                 {selected.servizio && <p className="text-sm text-indigo-700">📋 {selected.servizio} · {selected.durata} min</p>}
                 {(selected.coperti ?? 1) > 0 && <p className="text-sm text-indigo-700">🪑 {selected.coperti ?? 1} {(selected.coperti ?? 1) === 1 ? 'persona' : 'persone'}</p>}
-                {selected.tavoloId && (() => { const t = tavoli.find(t => t.id === selected.tavoloId); return t ? <p className="text-sm text-indigo-700">🍽️ Tavolo {t.numero} ({t.posti} posti)</p> : null })()}
+                {(() => {
+                  const ids: string[] = (() => { try { return selected.tavoliIds ? JSON.parse(selected.tavoliIds) : (selected.tavoloId ? [selected.tavoloId] : []) } catch { return selected.tavoloId ? [selected.tavoloId] : [] } })()
+                  const ts = tavoli.filter(t => ids.includes(t.id)).sort((a,b) => a.numero - b.numero)
+                  if (ts.length === 0) return null
+                  return <p className="text-sm text-indigo-700">🍽️ {ts.length === 1 ? `Tavolo ${ts[0].numero} (${ts[0].posti} posti)` : `Tavoli ${ts.map(t=>t.numero).join('+')} (fusi · ${ts.reduce((s,t)=>s+t.posti,0)} posti)`}</p>
+                })()}
                 {selected.allergie && selected.allergie.toLowerCase() !== 'nessuna' && <p className="text-sm text-red-600">⚠️ {selected.allergie}</p>}
                 {selected.occasione && <p className="text-sm text-purple-600">🎉 {selected.occasione}</p>}
                 {selected.note && <p className="text-xs text-indigo-400 mt-1 italic">{selected.note}</p>}
@@ -549,43 +607,70 @@ export default function Calendario() {
 
               {tavoli.length > 0 && (
                 <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Tavolo assegnato</p>
-                  <select
-                    value={selected.tavoloId ?? ''}
-                    onChange={async e => {
-                      const tavoloId = e.target.value || null
-                      const res = await fetch(`/api/appuntamenti/${selected.id}`, {
-                        method: 'PATCH', credentials: 'include',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ tavoloId }),
-                      })
-                      if (!res.ok) {
-                        const err = await res.json()
-                        if (err.conflitto) {
-                          alert('⚠️ Tavolo già occupato in questo orario. Scegline un altro.')
-                          return
-                        }
-                      }
-                      setSelected(prev => prev ? { ...prev, tavoloId } : null)
-                      await fetchAll()
-                    }}
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="">— Nessun tavolo —</option>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Tavoli assegnati</p>
+                    {tavoliAssegnati.length > 0 && (
+                      <span className="text-xs font-bold text-indigo-600">
+                        {tavoliAssegnati.length === 1
+                          ? `T${tavoli.find(t => t.id === tavoliAssegnati[0])?.numero ?? ''}`
+                          : `T${tavoli.filter(t => tavoliAssegnati.includes(t.id)).sort((a,b)=>a.numero-b.numero).map(t=>t.numero).join('+')}`}
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-1.5 mb-3">
                     {tavoli.map(t => {
-                      const occupato = appuntamenti.some(a =>
-                        a.id !== selected.id &&
-                        a.tavoloId === t.id &&
-                        a.status !== 'cancellato' &&
-                        Math.abs(new Date(a.data).getTime() - new Date(selected.data).getTime()) < (a.durata + 30) * 60000
-                      )
+                      const selStart = new Date(selected.data).getTime()
+                      const selEnd = selStart + selected.durata * 60000
+                      const occupato = appuntamenti.some(a => {
+                        if (a.id === selected.id || a.status === 'cancellato') return false
+                        const usaTavolo = a.tavoloId === t.id || (() => { try { return (JSON.parse(a.tavoliIds ?? '[]') as string[]).includes(t.id) } catch { return false } })()
+                        if (!usaTavolo) return false
+                        const aStart = new Date(a.data).getTime()
+                        const aEnd = aStart + a.durata * 60000
+                        return aStart < selEnd && selStart < aEnd
+                      })
+                      const checked = selectedTavoliIds.length > 0
+                        ? selectedTavoliIds.includes(t.id)
+                        : tavoliAssegnati.includes(t.id)
                       return (
-                        <option key={t.id} value={t.id} disabled={occupato}>
-                          {occupato ? '🔴 ' : '🟢 '}Tavolo {t.numero} · {t.posti} posti{t.note ? ` · ${t.note}` : ''}{occupato ? ' (occupato)' : ''}
-                        </option>
+                        <label key={t.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
+                          checked ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 hover:bg-gray-50'
+                        } ${occupato && !checked ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                          <input type="checkbox"
+                            checked={checked}
+                            disabled={occupato && !checked}
+                            onChange={e => {
+                              const base = selectedTavoliIds.length > 0 ? selectedTavoliIds : tavoliAssegnati
+                              setSelectedTavoliIds(e.target.checked
+                                ? [...base, t.id]
+                                : base.filter(id => id !== t.id)
+                              )
+                            }}
+                            className="accent-indigo-600 w-4 h-4 shrink-0"
+                          />
+                          <span className="text-sm text-gray-700 flex-1">
+                            <span className="font-semibold">Tavolo {t.numero}</span>
+                            <span className="text-gray-400"> · {t.posti} posti{t.note ? ` · ${t.note}` : ''}</span>
+                          </span>
+                          {occupato && !checked && <span className="text-xs text-red-400">occupato</span>}
+                        </label>
                       )
                     })}
-                  </select>
+                  </div>
+                  {(() => {
+                    const idsEffettivi = selectedTavoliIds.length > 0 ? selectedTavoliIds : tavoliAssegnati
+                    const label = idsEffettivi.length >= 2
+                      ? `Assegna e fondi (T${tavoli.filter(t=>idsEffettivi.includes(t.id)).sort((a,b)=>a.numero-b.numero).map(t=>t.numero).join('+')})`
+                      : 'Assegna tavolo'
+                    return (
+                      <button
+                        onClick={() => handleAssegnaTavoli(selected.id, idsEffettivi)}
+                        disabled={assegnaLoading || idsEffettivi.length === 0}
+                        className="w-full text-sm font-semibold bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                        {assegnaLoading ? 'Salvataggio…' : label}
+                      </button>
+                    )
+                  })()}
                 </div>
               )}
             </div>
@@ -597,7 +682,8 @@ export default function Calendario() {
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* ── MODALE NUOVO APPUNTAMENTO ── */}
       {showNuovo && (
@@ -671,14 +757,47 @@ export default function Calendario() {
               </div>
               {tavoli.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Tavolo</label>
-                  <select value={formApp.tavoloId} onChange={e => setFormApp({ ...formApp, tavoloId: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <option value="">— Nessun tavolo assegnato —</option>
-                    {tavoli.map(t => (
-                      <option key={t.id} value={t.id}>Tavolo {t.numero} ({t.posti} posti{t.note ? ` · ${t.note}` : ''})</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-sm font-medium text-gray-700">Tavoli (opzionale)</label>
+                    {formApp.tavoloId && (() => {
+                      const ids: string[] = (() => { try { return JSON.parse(formApp.tavoloId) } catch { return [formApp.tavoloId] } })()
+                      if (ids.length < 2) return null
+                      return <span className="text-xs font-bold text-orange-600">T{tavoli.filter(t=>ids.includes(t.id)).sort((a,b)=>a.numero-b.numero).map(t=>t.numero).join('+')} — verranno fusi</span>
+                    })()}
+                  </div>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                    {tavoli.map(t => {
+                      const selIds: string[] = (() => { try { return formApp.tavoloId ? JSON.parse(formApp.tavoloId) : [] } catch { return formApp.tavoloId ? [formApp.tavoloId] : [] } })()
+                      const checked = selIds.includes(t.id)
+                      const selStart = formApp.data && formApp.ora ? new Date(`${formApp.data}T${formApp.ora}`).getTime() : null
+                      const selEnd = selStart ? selStart + formApp.durata * 60000 : null
+                      const occupato = !checked && selStart !== null && selEnd !== null && appuntamenti.some(a => {
+                        if (a.status === 'cancellato') return false
+                        const usaTavolo = a.tavoloId === t.id || (() => { try { return (JSON.parse(a.tavoliIds ?? '[]') as string[]).includes(t.id) } catch { return false } })()
+                        if (!usaTavolo) return false
+                        const aStart = new Date(a.data).getTime()
+                        const aEnd = aStart + a.durata * 60000
+                        return aStart < selEnd! && selStart! < aEnd
+                      })
+                      return (
+                        <label key={t.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg border transition-colors ${
+                          occupato ? 'border-red-200 bg-red-50 cursor-not-allowed opacity-60' : checked ? 'border-indigo-300 bg-indigo-50 cursor-pointer' : 'border-gray-200 hover:bg-gray-50 cursor-pointer'
+                        }`}>
+                          <input type="checkbox" checked={checked} disabled={occupato}
+                            onChange={e => {
+                              const newIds = e.target.checked ? [...selIds, t.id] : selIds.filter(id => id !== t.id)
+                              setFormApp(f => ({ ...f, tavoloId: newIds.length === 0 ? '' : newIds.length === 1 ? newIds[0] : JSON.stringify(newIds) }))
+                            }}
+                            className="accent-indigo-600 w-4 h-4 shrink-0" />
+                          <span className="text-sm text-gray-700 flex-1">
+                            <span className="font-semibold">Tavolo {t.numero}</span>
+                            <span className="text-gray-400"> · {t.posti} posti{t.note ? ` · ${t.note}` : ''}</span>
+                          </span>
+                          {occupato && <span className="text-xs text-red-500 font-medium">occupato</span>}
+                        </label>
+                      )
+                    })}
+                  </div>
                 </div>
               )}
               <div>
