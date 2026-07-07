@@ -3,7 +3,8 @@ import { prisma } from '@/lib/prisma'
 
 function toMinutes(t: string) {
   const [h, m] = t.split(':').map(Number)
-  return h * 60 + m
+  const v = h * 60 + m
+  return v === 0 ? 1440 : v
 }
 
 // GET — menu

@@ -449,7 +449,7 @@ const VistaMappa = forwardRef<VistaMappHandle, {
 interface TurnoServizio { id: string; nome: string; oraInizio: string; oraFine: string }
 interface AppuntamentoLight { id: string; clienteNome?: string; data: string; durata: number; status: string; tavoloId?: string | null; tavoliIds?: string | null; coperti?: number }
 
-function toMinutes(hhmm: string) { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m }
+function toMinutes(hhmm: string) { const [h, m] = hhmm.split(':').map(Number); const v = h * 60 + m; return v === 0 ? 1440 : v }
 
 // ── Pagina ────────────────────────────────────────────────────────────────────
 export default function TavoliPage() {
