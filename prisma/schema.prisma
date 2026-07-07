@@ -52,6 +52,7 @@ model User {
   menuColoreS        String?           @default("#ffffff")
   turniServizio      String?           // JSON: [{id, nome, oraInizio, oraFine}]
   fabbisognoStaff   String?           // JSON: [{giorno: 0-6, ruolo: string, persone: number, oraInizio: string, oraFine: string}]
+  mapElementi        String?           // JSON: [{id, tipo, label, x, y, w, h, colore}]
 }
 
 model MenuCategoria {
@@ -171,6 +172,12 @@ model Tavolo {
   posti        Int            @default(4)
   note         String?
   gruppoId     String?
+  mapX         Float?
+  mapY         Float?
+  mapW         Float?
+  mapH         Float?
+  mapForma     String?
+  mapColore    String?
   createdAt    DateTime       @default(now())
   appuntamenti Appuntamento[]
   ordini       Ordine[]

@@ -21,17 +21,32 @@ const TIPI_ELEMENTO = [
   { tipo: 'muro',     label: 'Muro',        colore: '#374151', w: 220, h: 22  },
 ]
 
-// ── localStorage helpers ──────────────────────────────────────────────────────
-function loadMD(id: string): MapData {
-  try {
-    const s = localStorage.getItem(`fmd_${id}`)
-    if (s) { const d = JSON.parse(s); return { ...DEFAULT_VISUAL, x: 60, y: 60, ...d, w: d.w ?? 110, h: d.h ?? 110 } }
-  } catch {}
-  return { ...DEFAULT_VISUAL, x: 60, y: 60 }
+// ── DB helpers ────────────────────────────────────────────────────────────────
+function tavoloToMD(t: { mapX?: number | null; mapY?: number | null; mapW?: number | null; mapH?: number | null; mapForma?: string | null; mapColore?: string | null }, i: number): MapData {
+  const hasPos = t.mapX != null && t.mapY != null
+  return {
+    forma: (t.mapForma as MapData['forma']) ?? DEFAULT_VISUAL.forma,
+    colore: t.mapColore ?? DEFAULT_VISUAL.colore,
+    w: t.mapW ?? DEFAULT_VISUAL.w,
+    h: t.mapH ?? DEFAULT_VISUAL.h,
+    x: t.mapX ?? (60 + (i % 5) * 190),
+    y: t.mapY ?? (60 + Math.floor(i / 5) * 190),
+  }
 }
-function saveMD(id: string, d: MapData) { localStorage.setItem(`fmd_${id}`, JSON.stringify(d)) }
-function loadEl(): Elemento[] { try { return JSON.parse(localStorage.getItem('fme') ?? '[]') } catch { return [] } }
-function saveEl(el: Elemento[]) { localStorage.setItem('fme', JSON.stringify(el)) }
+async function saveMD(id: string, d: MapData) {
+  await fetch(`/api/tavoli/${id}`, {
+    method: 'PATCH', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mapX: d.x, mapY: d.y, mapW: d.w, mapH: d.h, mapForma: d.forma, mapColore: d.colore }),
+  })
+}
+async function saveEl(el: Elemento[]) {
+  await fetch('/api/settings', {
+    method: 'PATCH', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mapElementi: JSON.stringify(el) }),
+  })
+}
 
 // ── QR Canvas ─────────────────────────────────────────────────────────────────
 function QRCanvas({ url, id }: { url: string; id: string }) {
@@ -180,15 +195,20 @@ const VistaMappa = forwardRef<VistaMappHandle, {
   const resizeERef = useRef<{ id: string; sx: number; sy: number; ow: number; oh: number } | null>(null)
 
   useEffect(() => {
-    const d: Record<string, MapData> = {}
+    const d: Record<string, MapData> = { ...mdRef.current }
     tavoli.forEach((t, i) => {
-      const md = loadMD(t.id)
-      if (md.x === 60 && md.y === 60 && i > 0) { md.x = 60 + (i % 5) * 190; md.y = 60 + Math.floor(i / 5) * 190 }
-      d[t.id] = md
+      if (!d[t.id]) d[t.id] = tavoloToMD(t as any, i) // inizializza solo se nuovo
     })
+    // rimuovi tavoli eliminati
+    Object.keys(d).forEach(k => { if (!tavoli.find(t => t.id === k)) delete d[k] })
     setMapData(d); mdRef.current = d
-    const el = loadEl(); setElementi(el); elRef.current = el
   }, [tavoli])
+
+  useEffect(() => {
+    fetch('/api/settings', { credentials: 'include' }).then(r => r.json()).then(d => {
+      try { const el = JSON.parse(d.mapElementi ?? '[]'); setElementi(el); elRef.current = el } catch {}
+    }).catch(() => {})
+  }, [])
 
   function setZoomSync(nz: number) { zoomRef.current = nz; setZoom(nz) }
 
@@ -542,7 +562,7 @@ export default function TavoliPage() {
   async function eliminaTavolo(id: string) {
     if (!confirm('Eliminare questo tavolo?')) return
     await fetch(`/api/tavoli/${id}`, { method: 'DELETE', credentials: 'include' })
-    localStorage.removeItem(`fmd_${id}`); fetchTavoli()
+    fetchTavoli()
   }
 
   async function creaTavolo() {

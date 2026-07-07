@@ -8,10 +8,13 @@ export async function POST(req: Request) {
   const user = await getAuthUser(req)
   if (!user) return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
 
-  const { email } = await req.json()
+  const { email, dipendenteId } = await req.json()
   if (!email) return NextResponse.json({ error: 'Email obbligatoria' }, { status: 400 })
 
-  const dipendenti = await prisma.dipendente.findMany({ where: { email, userId: user.id } })
+  const where = dipendenteId
+    ? { id: dipendenteId, userId: user.id }
+    : { email, userId: user.id }
+  const dipendenti = await prisma.dipendente.findMany({ where })
   if (dipendenti.length === 0) return NextResponse.json({ error: 'Email non trovata' }, { status: 404 })
 
   const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'

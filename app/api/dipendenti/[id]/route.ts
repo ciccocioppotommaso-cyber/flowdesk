@@ -17,6 +17,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const { id } = await params
   await prisma.turno.deleteMany({ where: { dipendenteId: id } })
   await prisma.richiestaDipendente.deleteMany({ where: { dipendenteId: id } })
+  await prisma.disponibilitaDipendente.deleteMany({ where: { dipendenteId: id } })
   await prisma.dipendente.deleteMany({ where: { id, userId: user.id } })
   return NextResponse.json({ ok: true })
 }
