@@ -76,7 +76,7 @@ export default function ChatWidget({ ownerId }: ChatWidgetProps) {
           <div className="bg-indigo-600 px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-              <span className="text-white font-semibold text-sm">Assistente FlowDesk</span>
+              <span className="text-white font-semibold text-sm">Assistente Flowest</span>
             </div>
             <button onClick={() => setOpen(false)} className="text-indigo-200 hover:text-white text-lg">✕</button>
           </div>

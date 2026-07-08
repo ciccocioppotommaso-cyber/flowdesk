@@ -144,7 +144,7 @@ export default function PublicChat() {
 
       {/* Footer */}
       <div className="text-center py-2 bg-gray-50">
-        <p className="text-xs text-gray-300">Powered by <span className="font-semibold">FlowDesk</span></p>
+        <p className="text-xs text-gray-300">Powered by <span className="font-semibold">Flowest</span></p>
       </div>
     </div>
   )

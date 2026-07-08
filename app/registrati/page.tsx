@@ -1,5 +1,7 @@
 'use client'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import Logo from '../components/Logo'
 
 export default function RegistratiPage() {
   const router = useRouter()
@@ -10,47 +12,49 @@ export default function RegistratiPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
+    <main className="min-h-screen bg-mist flex flex-col items-center justify-center p-6">
+      <Logo size={34} className="mb-10" />
+
       <div className="mb-10 text-center">
-        <h1 className="text-3xl font-bold text-gray-900">Scegli il tuo prodotto</h1>
-        <p className="text-gray-500 mt-2">Puoi cambiarlo in seguito dalle impostazioni</p>
+        <h1 className="text-3xl font-extrabold text-ink-navy tracking-tight">Scegli il tuo prodotto</h1>
+        <p className="text-ink-navy/50 mt-2">Puoi cambiarlo in seguito dalle impostazioni</p>
       </div>
 
       <div className="grid sm:grid-cols-2 gap-6 w-full max-w-2xl">
         {/* Food */}
         <button onClick={() => scegli('food')}
-          className="bg-white border-2 border-gray-200 hover:border-indigo-400 rounded-2xl p-8 text-left transition-all hover:shadow-lg group">
+          className="bg-white border-2 border-transparent hover:border-electric-blue rounded-2xl p-8 text-left transition-all hover:shadow-lg group">
           <div className="text-4xl mb-4">🍽️</div>
-          <h2 className="text-xl font-bold text-gray-900 group-hover:text-indigo-700 transition-colors">
+          <h2 className="text-xl font-extrabold text-ink-navy group-hover:text-electric-blue transition-colors">
             Flowest Food
           </h2>
-          <p className="text-gray-500 text-sm mt-2 leading-relaxed">
+          <p className="text-ink-navy/50 text-sm mt-2 leading-relaxed">
             Gestione tavoli, menu digitale, ordini QR, prenotazioni, staff e analytics per ristoranti e locali.
           </p>
-          <span className="inline-block mt-4 text-xs font-semibold bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full">
+          <span className="inline-block mt-4 font-mono text-[11px] tracking-wide font-semibold bg-electric-blue/10 text-electric-blue px-3 py-1 rounded-full">
             Ristoranti · Bar · Locali
           </span>
         </button>
 
         {/* Care */}
         <button onClick={() => scegli('care')}
-          className="bg-white border-2 border-gray-200 hover:border-teal-400 rounded-2xl p-8 text-left transition-all hover:shadow-lg group">
-          <div className="text-4xl mb-4">🏥</div>
-          <h2 className="text-xl font-bold text-gray-900 group-hover:text-teal-700 transition-colors">
+          className="bg-white border-2 border-transparent hover:border-electric-blue rounded-2xl p-8 text-left transition-all hover:shadow-lg group">
+          <div className="text-4xl mb-4">🩺</div>
+          <h2 className="text-xl font-extrabold text-ink-navy group-hover:text-electric-blue transition-colors">
             Flowest Care
           </h2>
-          <p className="text-gray-500 text-sm mt-2 leading-relaxed">
+          <p className="text-ink-navy/50 text-sm mt-2 leading-relaxed">
             Gestione pazienti, appuntamenti, cartelle cliniche, staff e analytics per strutture sanitarie.
           </p>
-          <span className="inline-block mt-4 text-xs font-semibold bg-teal-50 text-teal-700 px-3 py-1 rounded-full">
+          <span className="inline-block mt-4 font-mono text-[11px] tracking-wide font-semibold bg-electric-blue/10 text-electric-blue px-3 py-1 rounded-full">
             Cliniche · Studi · Ambulatori
           </span>
         </button>
       </div>
 
-      <p className="mt-8 text-sm text-gray-400">
+      <p className="mt-8 text-sm text-ink-navy/40">
         Hai già un account?{' '}
-        <a href="/sign-in" className="text-indigo-600 hover:underline font-medium">Accedi</a>
+        <Link href="/sign-in" className="text-electric-blue hover:underline font-medium">Accedi</Link>
       </p>
     </main>
   )

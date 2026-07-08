@@ -101,22 +101,25 @@ export default function Sidebar({ verticale }: SidebarProps) {
   }, [verticale])
 
   const navigation = verticale === 'food' ? navFood : navCare
-  const accentColor = verticale === 'food' ? 'indigo' : 'teal'
   const logoLabel = verticale === 'food' ? 'Flowest Food' : 'Flowest Care'
-  const logoIcon = verticale === 'food' ? '🍽️' : '🏥'
 
   return (
-    <aside className={`${open ? 'w-60' : 'w-16'} transition-all duration-200 bg-white border-r border-gray-200 flex flex-col h-full`}>
+    <aside className={`${open ? 'w-60' : 'w-16'} transition-all duration-200 bg-ink-navy flex flex-col h-full`}>
       {/* Logo */}
-      <div className="h-14 flex items-center justify-between px-4 border-b border-gray-200">
+      <div className="h-14 flex items-center justify-between px-4 border-b border-white/10">
         {open ? (
-          <span className={`text-base font-bold ${accentColor === 'teal' ? 'text-teal-600' : 'text-indigo-600'}`}>
-            {logoIcon} {logoLabel}
-          </span>
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 rounded-[28%] bg-electric-blue flex items-center justify-center shrink-0">
+              <span className="text-zest-lime font-extrabold text-sm leading-none">F</span>
+            </div>
+            <span className="text-sm font-extrabold text-white truncate">{logoLabel}</span>
+          </div>
         ) : (
-          <span className="text-lg">{logoIcon}</span>
+          <div className="w-7 h-7 rounded-[28%] bg-electric-blue flex items-center justify-center shrink-0 mx-auto">
+            <span className="text-zest-lime font-extrabold text-sm leading-none">F</span>
+          </div>
         )}
-        <button onClick={() => setOpen(v => !v)} className="text-gray-400 hover:text-gray-600 text-xs ml-1">
+        <button onClick={() => setOpen(v => !v)} className="text-white/30 hover:text-white/70 text-xs ml-1">
           {open ? '◀' : '▶'}
         </button>
       </div>
@@ -124,7 +127,7 @@ export default function Sidebar({ verticale }: SidebarProps) {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-1">
         <Link href="/dashboard"
-          className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${pathname === '/dashboard' ? `bg-${accentColor}-50 text-${accentColor}-700` : 'text-gray-600 hover:bg-gray-100'}`}>
+          className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${pathname === '/dashboard' ? 'bg-electric-blue text-white' : 'text-white/60 hover:bg-white/5 hover:text-white'}`}>
           <span className="text-base shrink-0">▦</span>
           {open && <span>Overview</span>}
         </Link>
@@ -132,7 +135,7 @@ export default function Sidebar({ verticale }: SidebarProps) {
         {navigation.map((group, i) => (
           <div key={i} className="pt-4">
             {open && (
-              <p className="px-3 pb-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+              <p className="px-3 pb-1 font-mono text-[10px] font-semibold text-white/30 uppercase tracking-wider">
                 {group.section}
               </p>
             )}
@@ -143,10 +146,8 @@ export default function Sidebar({ verticale }: SidebarProps) {
                   <Link key={item.href} href={item.href}
                     className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                       active
-                        ? accentColor === 'teal'
-                          ? 'bg-teal-50 text-teal-700'
-                          : 'bg-indigo-50 text-indigo-700'
-                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                        ? 'bg-electric-blue text-white'
+                        : 'text-white/60 hover:bg-white/5 hover:text-white'
                     }`}>
                     <span className="text-base shrink-0 relative">
                       {item.icon}
@@ -163,12 +164,12 @@ export default function Sidebar({ verticale }: SidebarProps) {
                     </span>
                     {open && <span className="flex-1">{item.label}</span>}
                     {open && item.href === '/dashboard/clienti/preventivi' && daVerificare > 0 && (
-                      <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
+                      <span className="bg-zest-lime text-ink-navy text-xs font-bold px-1.5 py-0.5 rounded-full">
                         {daVerificare > 9 ? '9+' : daVerificare}
                       </span>
                     )}
                     {open && item.href === '/dashboard/clienti/lista-attesa' && inAttesa > 0 && (
-                      <span className="bg-amber-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
+                      <span className="bg-amber-400 text-ink-navy text-xs font-bold px-1.5 py-0.5 rounded-full">
                         {inAttesa > 9 ? '9+' : inAttesa}
                       </span>
                     )}
@@ -182,15 +183,15 @@ export default function Sidebar({ verticale }: SidebarProps) {
 
       {/* Piano attivo */}
       {open && (
-        <div className="p-4 border-t border-gray-200">
-          <div className={`${accentColor === 'teal' ? 'bg-teal-50' : 'bg-indigo-50'} rounded-lg p-3`}>
-            <p className={`text-xs font-semibold ${accentColor === 'teal' ? 'text-teal-700' : 'text-indigo-700'}`}>
+        <div className="p-4 border-t border-white/10">
+          <div className="bg-white/5 rounded-lg p-3">
+            <p className="text-xs font-semibold text-zest-lime">
               Trial gratuito
             </p>
-            <p className={`text-xs ${accentColor === 'teal' ? 'text-teal-500' : 'text-indigo-500'} mt-0.5`}>
+            <p className="text-xs text-white/40 mt-0.5">
               30 giorni rimanenti
             </p>
-            <button className={`mt-2 w-full text-xs ${accentColor === 'teal' ? 'bg-teal-600 hover:bg-teal-700' : 'bg-indigo-600 hover:bg-indigo-700'} text-white rounded-md py-1.5 font-medium transition-colors`}>
+            <button className="mt-2 w-full text-xs bg-zest-lime hover:bg-zest-lime/90 text-ink-navy rounded-md py-1.5 font-semibold transition-colors">
               Passa a Pro
             </button>
           </div>

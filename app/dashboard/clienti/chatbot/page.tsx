@@ -19,7 +19,7 @@ export default function ChatbotPage() {
   }, [])
 
   const widgetUrl = publicId ? `${window.location.origin}/chat/${publicId}` : null
-  const scriptTag = widgetUrl ? `<!-- Incolla questo script prima di </body> -->\n<script>\n  window.FlowDeskId = "${publicId}";\n</script>\n<script src="${window.location.origin}/widget.js" async></script>` : null
+  const scriptTag = widgetUrl ? `<!-- Incolla questo script prima di </body> -->\n<script>\n  window.FlowestId = "${publicId}";\n</script>\n<script src="${window.location.origin}/widget.js" async></script>` : null
 
   if (loading) return <div className="text-gray-400 text-sm p-6">Caricamento...</div>
 

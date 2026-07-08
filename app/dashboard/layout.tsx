@@ -55,11 +55,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [verticale, pathname, router])
 
   if (!isLoaded || !isSignedIn || !verticale) {
-    return <div className="flex h-screen items-center justify-center text-gray-400 text-sm">Caricamento...</div>
+    return <div className="flex h-screen items-center justify-center text-ink-navy/40 text-sm font-mono">Caricamento...</div>
   }
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex h-screen bg-mist overflow-hidden">
       <Sidebar verticale={verticale} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <TopBar onMenuClick={() => {}} />
