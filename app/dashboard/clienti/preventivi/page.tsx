@@ -106,6 +106,9 @@ const STATUS_COLORS: Record<string, string> = {
   accettato: 'bg-green-100 text-green-700',
   rifiutato: 'bg-red-100 text-red-600',
   cliente_eliminato: 'bg-red-50 text-red-400',
+  concluso_completato: 'bg-emerald-100 text-emerald-700',
+  concluso_cancellato: 'bg-red-100 text-red-600',
+  concluso_no_show: 'bg-orange-100 text-orange-600',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -117,7 +120,12 @@ const STATUS_LABELS: Record<string, string> = {
   accettato: 'Accettato',
   rifiutato: 'Rifiutato',
   cliente_eliminato: 'Cliente eliminato',
+  concluso_completato: 'Completato',
+  concluso_cancellato: 'Cancellato',
+  concluso_no_show: 'No-show',
 }
+
+const STATI_CONCLUSI = ['concluso_completato', 'concluso_cancellato', 'concluso_no_show']
 
 function NuovaRichiestaModal({ onClose, onSave, initial }: {
   onClose: () => void
@@ -478,6 +486,8 @@ function Richieste() {
   const [confermaApp, setConfermaApp] = useState<Richiesta | null>(null)
   const [proposta, setProposta] = useState<Richiesta | null>(null)
   const [tipoAttivo, setTipoAttivo] = useState('tutti')
+  const [vistaConcluse, setVistaConcluse] = useState(false)
+  const [tipoAttivoConcluse, setTipoAttivoConcluse] = useState('tutti')
   const [clienteStorico, setClienteStorico] = useState<StoricoProfilo | null>(null)
   const [allergieMemoriate, setAllergieMemoriate] = useState<string[]>([])
   const [preferenzeMemoriate, setPreferenzeMemoriate] = useState<string[]>([])
@@ -708,14 +718,26 @@ function Richieste() {
   const tipoInfo = (tipo: string) => TIPI.find(t => t.id === tipo) ?? TIPI[0]
 
   const isListaAttesa = (s: string) => s === 'lista_attesa' || s === 'lista_attesa_contattato'
+  const isConcluso = (s: string) => STATI_CONCLUSI.includes(s)
+
+  const richiesteAttive = richieste.filter(r => !isConcluso(r.status))
+  const richiesteConcluse = richieste.filter(r => isConcluso(r.status))
+
   const richiesteVisibili = tipoAttivo === 'tutti'
-    ? richieste.filter(r => r.status !== 'da_verificare' && !isListaAttesa(r.status))
-    : richieste.filter(r => r.tipo === tipoAttivo && r.status !== 'da_verificare' && !isListaAttesa(r.status))
+    ? richiesteAttive.filter(r => r.status !== 'da_verificare' && !isListaAttesa(r.status))
+    : richiesteAttive.filter(r => r.tipo === tipoAttivo && r.status !== 'da_verificare' && !isListaAttesa(r.status))
+
+  const richiesteConclusiVisibili = tipoAttivoConcluse === 'tutti'
+    ? richiesteConcluse
+    : richiesteConcluse.filter(r => r.tipo === tipoAttivoConcluse)
 
   const conteggioPerTipo = (tipo: string) =>
     tipo === 'tutti'
-      ? richieste.filter(r => r.status !== 'da_verificare' && r.status !== 'lista_attesa').length
-      : richieste.filter(r => r.tipo === tipo && r.status !== 'da_verificare' && r.status !== 'lista_attesa').length
+      ? richiesteAttive.filter(r => r.status !== 'da_verificare' && !isListaAttesa(r.status)).length
+      : richiesteAttive.filter(r => r.tipo === tipo && r.status !== 'da_verificare' && !isListaAttesa(r.status)).length
+
+  const conteggioConclusiPerTipo = (tipo: string) =>
+    tipo === 'tutti' ? richiesteConcluse.length : richiesteConcluse.filter(r => r.tipo === tipo).length
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -723,18 +745,114 @@ function Richieste() {
         <div>
           <h1 className="text-2xl font-bold text-ink-navy">Richieste</h1>
           <p className="text-ink-navy/50 mt-0.5">
-            {richieste.length} richieste totali{daVerificare.length > 0 && ` · `}
-            {daVerificare.length > 0 && <span className="text-amber-600 font-medium">{daVerificare.length} da verificare</span>}
+            {richiesteAttive.filter(r => !isListaAttesa(r.status) && r.status !== 'da_verificare').length} attive
+            {daVerificare.length > 0 && <> · <span className="text-amber-600 font-medium">{daVerificare.length} da verificare</span></>}
+            {richiesteConcluse.length > 0 && <> · <span className="text-ink-navy/40">{richiesteConcluse.length} concluse</span></>}
           </p>
         </div>
-        <button onClick={() => setShowModal(true)}
-          className="bg-electric-blue text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-electric-blue/90 transition-colors">
-          + Nuova richiesta
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex gap-1 bg-mist rounded-lg p-1">
+            <button onClick={() => setVistaConcluse(false)}
+              className={`text-xs px-3 py-1.5 rounded-md font-semibold transition-colors ${!vistaConcluse ? 'bg-white text-ink-navy shadow-sm' : 'text-ink-navy/50 hover:text-ink-navy/70'}`}>
+              Attive
+            </button>
+            <button onClick={() => setVistaConcluse(true)}
+              className={`text-xs px-3 py-1.5 rounded-md font-semibold transition-colors flex items-center gap-1.5 ${vistaConcluse ? 'bg-white text-ink-navy shadow-sm' : 'text-ink-navy/50 hover:text-ink-navy/70'}`}>
+              Concluse
+              {richiesteConcluse.length > 0 && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${vistaConcluse ? 'bg-ink-navy/10 text-ink-navy/60' : 'bg-ink-navy/10 text-ink-navy/40'}`}>
+                  {richiesteConcluse.length}
+                </span>
+              )}
+            </button>
+          </div>
+          {!vistaConcluse && (
+            <button onClick={() => setShowModal(true)}
+              className="bg-electric-blue text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-electric-blue/90 transition-colors">
+              + Nuova richiesta
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
         <div className="text-center text-ink-navy/35 py-12">Caricamento...</div>
+      ) : vistaConcluse ? (
+        /* ── VISTA CONCLUSE ── */
+        <div className="space-y-4">
+          <div className="flex gap-2 flex-wrap">
+            {TIPI.map(t => {
+              const count = conteggioConclusiPerTipo(t.id)
+              return (
+                <button key={t.id} onClick={() => setTipoAttivoConcluse(t.id)}
+                  className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg font-medium transition-colors border ${
+                    tipoAttivoConcluse === t.id
+                      ? 'bg-electric-blue text-white border-electric-blue'
+                      : 'bg-white border-ink-navy/10 text-ink-navy/60 hover:border-electric-blue'
+                  }`}>
+                  <span>{t.label}</span>
+                  {count > 0 && (
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${tipoAttivoConcluse === t.id ? 'bg-white/20 text-white' : 'bg-mist text-ink-navy/50'}`}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {richiesteConclusiVisibili.length === 0 ? (
+            <div className="bg-white border border-dashed border-ink-navy/15 rounded-xl p-12 text-center text-ink-navy/35">
+              <p className="font-medium">Nessuna richiesta conclusa</p>
+              <p className="text-sm mt-1">Le richieste completate, cancellate o no-show appariranno qui</p>
+            </div>
+          ) : (
+            <div className="bg-white border border-ink-navy/10 rounded-xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-mist border-b border-ink-navy/10">
+                  <tr>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">N°</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Tipo</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Cliente</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Richiesta</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Data</th>
+                    <th className="text-center px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Esito</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {richiesteConclusiVisibili.map(r => {
+                    const t = tipoInfo(r.tipo)
+                    return (
+                      <tr key={r.id} onClick={() => setSelected(r)} className="hover:bg-mist cursor-pointer transition-colors opacity-75">
+                        <td className="px-4 py-3 font-medium text-ink-navy">#{String(r.numero).padStart(3, '0')}</td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${t.color}`}>{t.label}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-ink-navy">{r.clienteName}</p>
+                          {r.clienteEmail && <p className="text-xs text-ink-navy/35">{r.clienteEmail}</p>}
+                        </td>
+                        <td className="px-4 py-3 max-w-xs">
+                          {(() => {
+                            const items = JSON.parse(r.items) as Item[]
+                            const desc = items.map(i => i.descrizione).filter(Boolean).join(', ')
+                            return <p className="text-sm text-ink-navy/60 truncate">{desc || '—'}</p>
+                          })()}
+                        </td>
+                        <td className="px-4 py-3 text-ink-navy/50">{new Date(r.createdAt).toLocaleDateString('it-IT')}</td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`text-xs font-semibold px-2 py-1 rounded-full ${STATUS_COLORS[r.status] ?? 'bg-mist text-ink-navy/60'}`}>
+                            {STATUS_LABELS[r.status] ?? r.status}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       ) : (
         <div className="space-y-6">
           {/* Da verificare */}
@@ -1030,9 +1148,13 @@ function Richieste() {
                 {/* Stato */}
                 <div>
                   <p className="text-xs font-semibold text-ink-navy/35 uppercase tracking-wider mb-2">
-                    {selected.status === 'da_verificare' ? 'Azioni rapide' : 'Aggiorna stato'}
+                    {isConcluso(selected.status) ? 'Esito' : selected.status === 'da_verificare' ? 'Azioni rapide' : 'Aggiorna stato'}
                   </p>
-                  {selected.status === 'da_verificare' ? (
+                  {isConcluso(selected.status) ? (
+                    <div className={`rounded-xl px-4 py-3 text-sm font-semibold text-center ${STATUS_COLORS[selected.status] ?? 'bg-mist text-ink-navy/60'}`}>
+                      {STATUS_LABELS[selected.status] ?? selected.status}
+                    </div>
+                  ) : selected.status === 'da_verificare' ? (
                     <div className="space-y-2">
                       <button onClick={() => { handleStatusChange(selected.id, 'accettato') }}
                         className="w-full bg-green-600 text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2">

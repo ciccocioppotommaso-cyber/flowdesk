@@ -13,6 +13,8 @@ export async function GET(req: Request) {
   let appAggiornati = 0
   let leadCancellati = 0
   let convEliminate = 0
+  let richiesteConcluse = 0
+  let ordiniEliminati = 0
 
   // 1a. Auto-conferma ordini e delivery non ancora gestiti manualmente
   //     (status non in stati finali) con data passata
@@ -46,6 +48,55 @@ export async function GET(req: Request) {
   })
   appAggiornati = risultato.count
 
+  // 1c. Propaga lo stato "concluso" alle richieste collegate agli appuntamenti terminati
+  //     Viene eseguito dopo i passi 1a+1b per includere anche le nuove conclusioni appena create
+  const appsConcluse = await prisma.appuntamento.findMany({
+    where: {
+      status: { in: ['completato', 'cancellato', 'no_show'] },
+      note: { contains: 'Da richiesta #' },
+    },
+    select: { note: true, status: true, userId: true },
+  })
+  const statusMap: Record<string, string> = {
+    completato: 'concluso_completato',
+    cancellato: 'concluso_cancellato',
+    no_show: 'concluso_no_show',
+  }
+  for (const a of appsConcluse) {
+    if (!a.note) continue
+    const match = a.note.match(/Da richiesta #(\d+)/)
+    if (!match) continue
+    const numero = parseInt(match[1])
+    const nuovoStatus = statusMap[a.status]
+    if (!nuovoStatus) continue
+    const res = await prisma.preventivo.updateMany({
+      where: {
+        userId: a.userId,
+        numero,
+        status: { notIn: ['concluso_completato', 'concluso_cancellato', 'concluso_no_show'] },
+      },
+      data: { status: nuovoStatus },
+    })
+    richiesteConcluse += res.count
+  }
+
+  // 1d. Elimina ordini/delivery già completati nei giorni precedenti (punto 5)
+  const inizioOggi = new Date(ora)
+  inizioOggi.setHours(0, 0, 0, 0)
+  const delRes = await prisma.appuntamento.deleteMany({
+    where: {
+      status: 'completato',
+      data: { lt: inizioOggi },
+      OR: [
+        { servizio: { contains: 'asporto',  mode: 'insensitive' } },
+        { servizio: { contains: 'ordine',   mode: 'insensitive' } },
+        { servizio: { contains: 'delivery', mode: 'insensitive' } },
+        { servizio: { contains: 'domicilio',mode: 'insensitive' } },
+      ],
+    },
+  })
+  ordiniEliminati = delRes.count
+
   // 2. Archivia lead con status 'chiuso' da più di 30 giorni
   const trentaGorniFa = new Date(ora.getTime() - 30 * 24 * 60 * 60 * 1000)
   const leadDaArchiviare = await prisma.lead.findMany({
@@ -72,7 +123,9 @@ export async function GET(req: Request) {
   return NextResponse.json({
     ok: true,
     appuntamentiCompletati: appAggiornati,
-leadArchiviati: leadCancellati,
+    richiesteConcluse,
+    ordiniEliminati,
+    leadArchiviati: leadCancellati,
     conversazioniEliminate: convEliminate,
     eseguitoAlle: ora.toISOString(),
   })

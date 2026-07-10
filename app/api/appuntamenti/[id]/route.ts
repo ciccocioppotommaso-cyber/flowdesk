@@ -87,6 +87,32 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   await prisma.appuntamento.updateMany({ where: { id, userId: user.id }, data })
+
+  // Quando un appuntamento viene concluso (completato/cancellato/no_show), aggiorna la richiesta collegata
+  if (data.status && ['completato', 'cancellato', 'no_show'].includes(data.status)) {
+    const app = await prisma.appuntamento.findFirst({
+      where: { id, userId: user.id },
+      select: { note: true },
+    })
+    if (app?.note) {
+      const match = app.note.match(/Da richiesta #(\d+)/)
+      if (match) {
+        const numero = parseInt(match[1])
+        const nuovoStatus = data.status === 'completato' ? 'concluso_completato'
+          : data.status === 'cancellato' ? 'concluso_cancellato'
+          : 'concluso_no_show'
+        await prisma.preventivo.updateMany({
+          where: {
+            userId: user.id,
+            numero,
+            status: { notIn: ['concluso_completato', 'concluso_cancellato', 'concluso_no_show'] },
+          },
+          data: { status: nuovoStatus },
+        })
+      }
+    }
+  }
+
   return NextResponse.json({ ok: true })
 }
 

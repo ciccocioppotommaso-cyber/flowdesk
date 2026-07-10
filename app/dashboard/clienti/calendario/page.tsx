@@ -899,7 +899,7 @@ export default function Calendario() {
                   </div>
                 </div>
 
-                {tavoli.length > 0 && (
+                {tipo === 'tavolo' && tavoli.length > 0 && (
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-xs font-semibold text-ink-navy/35 uppercase tracking-wider">Tavoli assegnati</p>
