@@ -228,6 +228,16 @@ model Dipendente {
   richieste        RichiestaDipendente[]
   turni            Turno[]
   disponibilita    DisponibilitaDipendente[]
+  timbrature       Timbratura[]
+}
+
+model Timbratura {
+  id           String     @id @default(cuid())
+  dipendenteId String
+  dipendente   Dipendente @relation(fields: [dipendenteId], references: [id], onDelete: Cascade)
+  userId       String
+  tipo         String     // "entrata" | "uscita"
+  timestamp    DateTime   @default(now())
 }
 
 model Turno {

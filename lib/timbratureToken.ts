@@ -1,0 +1,32 @@
+import { createHmac } from 'crypto'
+
+const secret = process.env.DIPENDENTE_JWT_SECRET ?? 'dipendente-secret-change-in-prod-32chars'
+
+export function currentMinute() {
+  return Math.floor(Date.now() / 60000)
+}
+
+export function generateQrToken(userId: string): string {
+  const minute = currentMinute()
+  const payload = `${userId}:${minute}`
+  const hmac = createHmac('sha256', secret).update(payload).digest('hex')
+  return Buffer.from(`${payload}:${hmac}`).toString('base64url')
+}
+
+export function verifyQrToken(token: string): { userId: string } | null {
+  try {
+    const decoded = Buffer.from(token, 'base64url').toString()
+    const parts = decoded.split(':')
+    if (parts.length < 3) return null
+    const hmac = parts.pop()!
+    const [userId, minuteStr] = parts
+    const minute = parseInt(minuteStr)
+    const now = currentMinute()
+    if (Math.abs(now - minute) > 1) return null // accetta minuto corrente e precedente
+    const expected = createHmac('sha256', secret).update(`${userId}:${minute}`).digest('hex')
+    if (hmac !== expected) return null
+    return { userId }
+  } catch {
+    return null
+  }
+}

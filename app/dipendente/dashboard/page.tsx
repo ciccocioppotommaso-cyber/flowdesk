@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Logo from '@/app/components/Logo'
 
@@ -32,6 +32,12 @@ interface Dipendente {
   mustChangePassword: boolean
   turni: Turno[]
   richieste: Richiesta[]
+}
+
+interface TimbraturaDip {
+  id: string
+  tipo: string
+  timestamp: string
 }
 
 interface GiornoDisponibile {
@@ -69,7 +75,15 @@ export default function DipendenteDashboard() {
   const router = useRouter()
   const [dipendente, setDipendente] = useState<Dipendente | null>(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'turni' | 'disponibilita' | 'richieste' | 'account'>('turni')
+  const [tab, setTab] = useState<'turni' | 'timbra' | 'disponibilita' | 'richieste' | 'account'>('turni')
+
+  // Timbra
+  const [timbratureOggi, setTimbratureOggi] = useState<TimbraturaDip[]>([])
+  const [scanning, setScanning] = useState(false)
+  const [scanResult, setScanResult] = useState<{ tipo: string; timestamp: string } | null>(null)
+  const [scanError, setScanError] = useState<string | null>(null)
+  const scannerRef = useRef<HTMLDivElement>(null)
+  const html5QrRef = useRef<unknown>(null)
 
   const [nuovaPassword, setNuovaPassword] = useState('')
   const [confermaPassword, setConfermaPassword] = useState('')
@@ -111,8 +125,65 @@ export default function DipendenteDashboard() {
     setDispModificata(false)
   }
 
+  async function fetchTimbrature() {
+    const res = await fetch('/api/dipendente/timbrature', { credentials: 'include' })
+    if (res.ok) { const d = await res.json(); setTimbratureOggi(d.timbrature ?? []) }
+  }
+
+  async function avviaScanner() {
+    setScanError(null)
+    setScanResult(null)
+    setScanning(true)
+  }
+
+  async function fermaScanner() {
+    if (html5QrRef.current) {
+      const scanner = html5QrRef.current as { stop: () => Promise<void> }
+      try { await scanner.stop() } catch { /* ignora */ }
+      html5QrRef.current = null
+    }
+    setScanning(false)
+  }
+
+  async function onScanSuccess(token: string) {
+    await fermaScanner()
+    const res = await fetch('/api/qr-timbratura/scan', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    })
+    const d = await res.json()
+    if (res.ok) {
+      setScanResult({ tipo: d.tipo, timestamp: d.timestamp })
+      fetchTimbrature()
+    } else {
+      setScanError(d.error || 'Errore durante la timbratura')
+    }
+  }
+
+  useEffect(() => {
+    if (!scanning || !scannerRef.current) return
+    let mounted = true
+    import('html5-qrcode').then(({ Html5Qrcode }) => {
+      if (!mounted || !scannerRef.current) return
+      const scanner = new Html5Qrcode('qr-scanner-div')
+      html5QrRef.current = scanner
+      scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 220, height: 220 } },
+        (text) => { if (mounted) onScanSuccess(text) },
+        () => { /* errore frame, ignora */ }
+      ).catch(err => {
+        if (mounted) setScanError('Impossibile accedere alla fotocamera: ' + String(err))
+        setScanning(false)
+      })
+    })
+    return () => { mounted = false; fermaScanner() }
+  }, [scanning])
+
   useEffect(() => { fetchProfilo() }, [])
   useEffect(() => { if (tab === 'disponibilita') fetchDisponibilita() }, [tab, meseDisp])
+  useEffect(() => { if (tab === 'timbra') fetchTimbrature() }, [tab])
 
   async function handleLogout() {
     await fetch('/api/dipendente/logout', { method: 'POST', credentials: 'include' })
@@ -263,6 +334,7 @@ export default function DipendenteDashboard() {
         <div className="flex gap-2 flex-wrap">
           {([
             { key: 'turni', label: 'I miei turni' },
+            { key: 'timbra', label: '🕐 Timbra' },
             { key: 'disponibilita', label: 'Disponibilità' },
             { key: 'richieste', label: 'Richieste' },
             { key: 'account', label: 'Account' },
@@ -351,6 +423,83 @@ export default function DipendenteDashboard() {
                     {turnoSelezionato.note && <p className="text-ink-navy/35 text-xs mt-1">{turnoSelezionato.note}</p>}
                   </div>
                   <button onClick={() => setTurnoSelezionato(null)} className="text-ink-navy/30 hover:text-ink-navy transition-colors text-lg">✕</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── TAB TIMBRA ── */}
+        {tab === 'timbra' && (
+          <div className="space-y-4">
+            {/* Risultato scan */}
+            {scanResult && (
+              <div className={`rounded-2xl border p-5 text-center ${scanResult.tipo === 'entrata' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                <p className="text-4xl mb-2">{scanResult.tipo === 'entrata' ? '✅' : '👋'}</p>
+                <p className={`text-lg font-bold ${scanResult.tipo === 'entrata' ? 'text-green-700' : 'text-red-700'}`}>
+                  {scanResult.tipo === 'entrata' ? 'Entrata registrata!' : 'Uscita registrata!'}
+                </p>
+                <p className="text-sm text-ink-navy/40 mt-1">
+                  {new Date(scanResult.timestamp).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+                </p>
+                <button onClick={() => setScanResult(null)}
+                  className="mt-4 text-sm text-ink-navy/40 hover:text-ink-navy transition-colors">
+                  Timbra di nuovo
+                </button>
+              </div>
+            )}
+
+            {scanError && (
+              <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-600 text-center">
+                {scanError}
+                <button onClick={() => setScanError(null)} className="block mx-auto mt-2 text-red-400 hover:text-red-600 transition-colors text-xs">Riprova</button>
+              </div>
+            )}
+
+            {!scanResult && !scanning && (
+              <div className="bg-white rounded-2xl border border-ink-navy/10 shadow-sm p-8 flex flex-col items-center gap-4">
+                <p className="text-5xl">📷</p>
+                <div className="text-center">
+                  <p className="font-bold text-ink-navy">Scansiona il QR</p>
+                  <p className="text-sm text-ink-navy/40 mt-1">Inquadra il codice QR presente sul tablet del locale</p>
+                </div>
+                <button onClick={avviaScanner}
+                  className="bg-electric-blue text-white font-semibold px-8 py-3 rounded-xl hover:bg-electric-blue/90 transition-colors text-sm">
+                  Apri fotocamera
+                </button>
+              </div>
+            )}
+
+            {scanning && (
+              <div className="bg-white rounded-2xl border border-ink-navy/10 shadow-sm overflow-hidden">
+                <div id="qr-scanner-div" ref={scannerRef} className="w-full" />
+                <div className="p-4 text-center">
+                  <button onClick={fermaScanner}
+                    className="text-sm text-ink-navy/40 hover:text-ink-navy transition-colors">
+                    Annulla
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Timbrature di oggi */}
+            {timbratureOggi.length > 0 && (
+              <div className="bg-white rounded-2xl border border-ink-navy/10 shadow-sm overflow-hidden">
+                <div className="px-4 py-3 border-b border-ink-navy/8">
+                  <p className="font-semibold text-ink-navy text-sm">Le tue timbrature di oggi</p>
+                </div>
+                <div className="divide-y divide-ink-navy/6">
+                  {timbratureOggi.map(t => (
+                    <div key={t.id} className="flex items-center gap-3 px-4 py-3">
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${t.tipo === 'entrata' ? 'bg-green-400' : 'bg-red-400'}`} />
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${t.tipo === 'entrata' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                        {t.tipo === 'entrata' ? '→ Entrata' : '← Uscita'}
+                      </span>
+                      <span className="text-sm text-ink-navy/50 ml-auto">
+                        {new Date(t.timestamp).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
