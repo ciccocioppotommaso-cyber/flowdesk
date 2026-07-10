@@ -5,19 +5,40 @@ const EMAIL_DISABLED = process.env.DISABLE_EMAIL === 'true'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
 
-export async function sendEmailStaff(email: string, nome: string, link: string) {
+export async function sendEmailAccessoDipendente(email: string, nome: string, username: string, loginUrl: string) {
   if (EMAIL_DISABLED || !process.env.RESEND_API_KEY) {
-    console.log(`[EMAIL STAFF] Link per ${nome}: ${link}`)
+    console.log(`[EMAIL DIPENDENTE] Accesso per ${nome}: ${loginUrl} (username: ${username})`)
     return
   }
   await resend.emails.send({
     from: 'Flowest Staff <info@flowest.it>',
     to: email,
-    subject: 'Il tuo link di accesso staff',
-    html: `<p>Ciao <strong>${nome}</strong>,</p>
-    <p>Clicca il link qui sotto per accedere alla tua area personale:</p>
-    <p><a href="${link}" style="background:#4F46E5;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;">Accedi all'area staff</a></p>
-    <p style="color:#6b7280;font-size:13px;">Il link e valido per 24 ore.</p>`,
+    subject: 'Accesso alla tua area personale',
+    html: `<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+        <tr><td style="background:#7c3aed;padding:28px 32px;">
+          <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">🔐 La tua area personale</h1>
+        </td></tr>
+        <tr><td style="padding:28px 32px;">
+          <p style="margin:0 0 16px;color:#374151;font-size:15px;">Ciao <strong>${nome}</strong>,</p>
+          <p style="margin:0 0 24px;color:#374151;font-size:15px;">Ecco le tue credenziali per accedere alla tua area personale:</p>
+          <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:16px 20px;margin-bottom:24px;">
+            <p style="margin:0 0 8px;color:#6b7280;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Nome utente</p>
+            <p style="margin:0;color:#5b21b6;font-size:18px;font-weight:700;font-family:monospace;">${username}</p>
+          </div>
+          <p style="margin:0 0 20px;color:#6b7280;font-size:14px;">Usa la password che ti è stata comunicata dal tuo responsabile. Potrai cambiarla dopo il primo accesso.</p>
+          <a href="${loginUrl}" style="display:inline-block;background:#7c3aed;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;padding:14px 32px;border-radius:8px;">Accedi all'area personale</a>
+          <p style="margin:20px 0 0;color:#9ca3af;font-size:12px;">Oppure copia questo link: ${loginUrl}</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`,
   })
 }
 

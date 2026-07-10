@@ -45,6 +45,8 @@ export default function MenuAsportoPage({ params }: { params: Promise<{ publicId
   const [loading, setLoading] = useState(true)
   const [errore, setErrore] = useState('')
   const [cattivaId, setCattivaId] = useState<string | null>(null)
+  const [blockAsporto, setBlockAsporto] = useState(false)
+  const [blockDelivery, setBlockDelivery] = useState(false)
 
   const [carrello, setCarrello] = useState<RigaCarrello[]>([])
   const [step, setStep] = useState<'menu' | 'checkout' | 'inviato'>('menu')
@@ -68,6 +70,8 @@ export default function MenuAsportoPage({ params }: { params: Promise<{ publicId
         setColoreP(d.menuColoreP ?? '#4f46e5')
         setCategorie(d.categorie ?? [])
         if (d.categorie?.length > 0) setCattivaId(d.categorie[0].id)
+        setBlockAsporto(d.blockAsporto ?? false)
+        setBlockDelivery(d.blockDelivery ?? false)
       })
       .catch(() => setErrore('Errore di connessione'))
       .finally(() => setLoading(false))
@@ -135,9 +139,8 @@ export default function MenuAsportoPage({ params }: { params: Promise<{ publicId
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="bg-white rounded-2xl p-10 text-center shadow-lg max-w-sm w-full">
         <div className="text-6xl mb-4">✅</div>
-        <h2 className="text-xl font-bold text-gray-900">Richiesta inviata!</h2>
-        {numeroOrdine && <p className="text-xs text-gray-400 mt-1">#{String(numeroOrdine).padStart(3, '0')}</p>}
-        <p className="text-gray-500 text-sm mt-3">La tua richiesta è stata ricevuta. Ti contatteremo a breve per confermare i dettagli. Riceverai una conferma via email.</p>
+        <h2 className="text-xl font-bold text-gray-900">Ordine ricevuto!</h2>
+        <p className="text-gray-500 text-sm mt-3">Il tuo ordine è stato registrato. Lo troverai pronto all'orario indicato.</p>
         <button onClick={() => { setStep('menu'); setDati(d => ({ ...d, nome: '', cognome: '', email: '', telefono: '', noteCliente: '' })) }}
           className="mt-6 w-full py-2.5 rounded-xl text-white font-semibold text-sm"
           style={{ backgroundColor: coloreP }}>
@@ -176,10 +179,39 @@ export default function MenuAsportoPage({ params }: { params: Promise<{ publicId
     </div>
   )
 
+  const entrambiBloccati = blockAsporto && blockDelivery
+  const soloAsportoBloccato = blockAsporto && !blockDelivery
+  const soloDeliveryBloccato = !blockAsporto && blockDelivery
+
   // ── Step menu ──
   if (step === 'menu') return (
     <div className="min-h-screen bg-gray-50 pb-32">
       <Header />
+      {entrambiBloccati && (
+        <div className="max-w-lg mx-auto px-4 pt-4">
+          <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-4 text-center">
+            <p className="text-2xl mb-1">🚫</p>
+            <p className="font-semibold text-red-800 text-sm">Servizio non disponibile</p>
+            <p className="text-red-600 text-xs mt-1">Asporto e delivery sono temporaneamente sospesi.</p>
+          </div>
+        </div>
+      )}
+      {soloAsportoBloccato && (
+        <div className="max-w-lg mx-auto px-4 pt-4">
+          <div className="bg-orange-50 border border-orange-200 rounded-2xl px-4 py-3 flex items-center gap-3">
+            <span className="text-xl">⚠️</span>
+            <p className="text-orange-800 text-sm"><strong>Asporto sospeso.</strong> Puoi ordinare solo in delivery.</p>
+          </div>
+        </div>
+      )}
+      {soloDeliveryBloccato && (
+        <div className="max-w-lg mx-auto px-4 pt-4">
+          <div className="bg-orange-50 border border-orange-200 rounded-2xl px-4 py-3 flex items-center gap-3">
+            <span className="text-xl">⚠️</span>
+            <p className="text-orange-800 text-sm"><strong>Delivery sospeso.</strong> Puoi ordinare solo in asporto.</p>
+          </div>
+        </div>
+      )}
       <div className="max-w-lg mx-auto px-4 py-4 space-y-8">
         {categorie.length === 0 ? (
           <div className="text-center py-20">
@@ -228,7 +260,7 @@ export default function MenuAsportoPage({ params }: { params: Promise<{ publicId
         ))}
       </div>
 
-      {totArticoli > 0 && (
+      {totArticoli > 0 && !entrambiBloccati && (
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-lg">
           <div className="max-w-lg mx-auto">
             <button onClick={() => setStep('checkout')}
@@ -282,13 +314,18 @@ export default function MenuAsportoPage({ params }: { params: Promise<{ publicId
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
           <p className="text-sm font-semibold text-gray-700">Come vuoi ricevere l'ordine?</p>
           <div className="grid grid-cols-2 gap-3">
-            {(['asporto', 'delivery'] as const).map(t => (
-              <button key={t} onClick={() => setDati(d => ({ ...d, tipo: t }))}
-                className={`py-3 rounded-xl border-2 text-sm font-semibold transition-colors ${dati.tipo === t ? 'border-transparent text-white' : 'border-gray-200 text-gray-600'}`}
-                style={dati.tipo === t ? { backgroundColor: coloreP } : {}}>
-                {t === 'asporto' ? '🛍 Ritiro in negozio' : '🛵 Delivery'}
-              </button>
-            ))}
+            {(['asporto', 'delivery'] as const).map(t => {
+              const bloccato = t === 'asporto' ? blockAsporto : blockDelivery
+              return (
+                <button key={t} onClick={() => !bloccato && setDati(d => ({ ...d, tipo: t }))}
+                  disabled={bloccato}
+                  className={`py-3 rounded-xl border-2 text-sm font-semibold transition-colors ${bloccato ? 'border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed' : dati.tipo === t ? 'border-transparent text-white' : 'border-gray-200 text-gray-600'}`}
+                  style={!bloccato && dati.tipo === t ? { backgroundColor: coloreP } : {}}>
+                  {t === 'asporto' ? '🛍 Ritiro in negozio' : '🛵 Delivery'}
+                  {bloccato && <span className="block text-[10px] font-normal mt-0.5">Non disponibile</span>}
+                </button>
+              )
+            })}
           </div>
         </div>
 

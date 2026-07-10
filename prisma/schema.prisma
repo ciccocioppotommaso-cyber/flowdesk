@@ -54,6 +54,8 @@ model User {
   turniServizio      String?           // JSON: [{id, nome, oraInizio, oraFine}]
   fabbisognoStaff   String?           // JSON: [{giorno: 0-6, ruolo: string, persone: number, oraInizio: string, oraFine: string}]
   mapElementi        String?           // JSON: [{id, tipo, label, x, y, w, h, colore}]
+  blockAsporto       Boolean           @default(false)
+  blockDelivery      Boolean           @default(false)
 }
 
 model MenuCategoria {
@@ -89,6 +91,8 @@ model Ordine {
   tavolo      String
   tavoloId    String?
   gruppoId    String?
+  tipo        String        @default("tavolo") // "tavolo" | "asporto" | "delivery"
+  clienteInfo String?       // JSON: {nome, email, telefono, indirizzo, data, ora}
   status      String        @default("nuovo")
   totale      Float
   note        String?
@@ -214,6 +218,9 @@ model Dipendente {
   email       String
   ruolo       String?
   fotoUrl     String?
+  username    String?               @unique
+  passwordHash String?
+  mustChangePassword Boolean       @default(true)
   token       String?               @unique
   tokenExpiry DateTime?
   createdAt   DateTime              @default(now())

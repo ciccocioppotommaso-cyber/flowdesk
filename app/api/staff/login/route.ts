@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { sendEmailStaff } from '@/lib/email'
+import { sendEmailAccessoDipendente } from '@/lib/email'
 import { getAuthUser } from '@/lib/getAuthUser'
-import crypto from 'crypto'
 
 export async function POST(req: Request) {
   const user = await getAuthUser(req)
@@ -14,18 +13,17 @@ export async function POST(req: Request) {
   const where = dipendenteId
     ? { id: dipendenteId, userId: user.id }
     : { email, userId: user.id }
-  const dipendenti = await prisma.dipendente.findMany({ where })
-  if (dipendenti.length === 0) return NextResponse.json({ error: 'Email non trovata' }, { status: 404 })
+  const dipendente = await prisma.dipendente.findFirst({ where })
+  if (!dipendente) return NextResponse.json({ error: 'Dipendente non trovato' }, { status: 404 })
+
+  if (!dipendente.username) {
+    return NextResponse.json({ error: 'Credenziali non ancora impostate. Usa "Imposta accesso" prima.' }, { status: 400 })
+  }
 
   const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-  const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 giorni
+  const loginUrl = `${BASE_URL}/dipendente/login`
 
-  await Promise.all(dipendenti.map(async d => {
-    const token = crypto.randomBytes(32).toString('hex')
-    await prisma.dipendente.update({ where: { id: d.id }, data: { token, tokenExpiry } })
-    const link = `${BASE_URL}/staff/${token}`
-    await sendEmailStaff(email, d.nome, link)
-  }))
+  await sendEmailAccessoDipendente(email, dipendente.nome, dipendente.username, loginUrl)
 
   return NextResponse.json({ ok: true })
 }

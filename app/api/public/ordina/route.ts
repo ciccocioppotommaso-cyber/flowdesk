@@ -11,57 +11,47 @@ export async function POST(req: Request) {
   const user = await prisma.user.findUnique({ where: { publicId } })
   if (!user) return NextResponse.json({ error: 'Locale non trovato' }, { status: 404 })
 
-  const nomeCompleto = [nome, cognome].filter(Boolean).join(' ')
-  const totale = righe.reduce((s: number, r: { prezzo: number; quantita: number }) => s + r.prezzo * r.quantita, 0)
-  const descrizioneItems = righe.map((r: { quantita: number; nome: string }) => `${r.quantita}× ${r.nome}`).join(', ')
+  const isDelivery = tipo === 'delivery'
 
-  // Note strutturate come il chatbot (extractDatiEmail le leggerà)
-  const noteParts = [
-    `Canale: ${tipo === 'delivery' ? 'Delivery' : 'Ordine asporto'}.`,
-    `DATA_ISO:${data}`,
-    `ORA_ISO:${ora}`,
-    telefono ? `Tel: ${telefono}.` : null,
-    tipo === 'delivery' && indirizzo ? `Indirizzo: ${indirizzo}.` : null,
-    noteCliente ? `Note cliente: ${noteCliente}.` : null,
-  ].filter(Boolean).join(' ')
-
-  // Trova o crea lead
-  let lead = await prisma.lead.findFirst({
-    where: { userId: user.id, email },
-    orderBy: { createdAt: 'desc' },
-  })
-  if (!lead) {
-    lead = await prisma.lead.create({
-      data: { userId: user.id, name: nomeCompleto, email, status: 'nuovo' },
-    })
-  } else {
-    await prisma.lead.update({
-      where: { id: lead.id },
-      data: { status: 'nuovo', cancellato: false },
-    })
+  if (isDelivery && user.blockDelivery) {
+    return NextResponse.json({ error: 'Il servizio delivery non è al momento disponibile.' }, { status: 503 })
+  }
+  if (!isDelivery && user.blockAsporto) {
+    return NextResponse.json({ error: 'Il servizio asporto non è al momento disponibile.' }, { status: 503 })
   }
 
-  const count = await prisma.preventivo.count({ where: { userId: user.id } })
+  const nomeCompleto = [nome, cognome].filter(Boolean).join(' ')
+  const totale = righe.reduce((s: number, r: { prezzo: number; quantita: number }) => s + r.prezzo * r.quantita, 0)
 
-  const preventivo = await prisma.preventivo.create({
+  const clienteInfo = JSON.stringify({
+    nome: nomeCompleto,
+    email,
+    telefono: telefono || null,
+    indirizzo: isDelivery ? (indirizzo || null) : null,
+    data,
+    ora,
+  })
+
+  // Trova o crea i piatti — le righe dal menu pubblico hanno già piattoId
+  const ordine = await prisma.ordine.create({
     data: {
       userId: user.id,
-      leadId: lead.id,
-      numero: count + 1,
-      tipo: tipo === 'delivery' ? 'delivery' : 'ordine',
-      clienteName: nomeCompleto,
-      clienteEmail: email,
-      items: JSON.stringify([{
-        descrizione: descrizioneItems,
-        quantita: righe.reduce((s: number, r: { quantita: number }) => s + r.quantita, 0),
-        prezzo: totale,
-        righe,
-      }]),
+      tavolo: isDelivery ? 'Delivery' : 'Asporto',
+      tipo: isDelivery ? 'delivery' : 'asporto',
+      clienteInfo,
       totale,
-      status: 'da_verificare',
-      note: noteParts,
+      note: noteCliente || null,
+      status: 'nuovo',
+      righe: {
+        create: righe.map((r: { piattoId: string; nome: string; prezzo: number; quantita: number }) => ({
+          piattoId: r.piattoId,
+          nome: r.nome,
+          prezzo: r.prezzo,
+          quantita: r.quantita,
+        })),
+      },
     },
   })
 
-  return NextResponse.json({ ok: true, numero: preventivo.numero })
+  return NextResponse.json({ ok: true, ordineId: ordine.id })
 }

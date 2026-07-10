@@ -16,6 +16,8 @@ export async function GET(req: Request) {
       menuLogoUrl: true,
       menuColoreP: true,
       menuColoreS: true,
+      blockAsporto: true,
+      blockDelivery: true,
     },
   })
   if (!user) return NextResponse.json({ error: 'Non trovato' }, { status: 404 })
@@ -43,5 +45,7 @@ export async function GET(req: Request) {
     categorie,
     hasAsporto: hasAsporto > 0,
     hasLocale: hasLocale > 0,
+    blockAsporto: user.blockAsporto,
+    blockDelivery: user.blockDelivery,
   })
 }

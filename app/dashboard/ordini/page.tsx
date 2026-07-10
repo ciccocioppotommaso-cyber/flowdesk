@@ -21,6 +21,8 @@ interface Ordine {
   id: string
   tavolo: string
   tavoloId: string | null
+  tipo: string
+  clienteInfo: string | null
   status: string
   totale: number
   note: string | null
@@ -83,11 +85,33 @@ export default function OrdiniPage() {
   const [confermaElimina, setConfermaElimina] = useState<string | null>(null)
   const [confermaAnnullaApp, setConfermaAnnullaApp] = useState<string | null>(null)
   const [storicoAperto, setStoricoAperto] = useState(false)
+  const [blockAsporto, setBlockAsporto] = useState(false)
+  const [blockDelivery, setBlockDelivery] = useState(false)
+  const [savingBlocco, setSavingBlocco] = useState(false)
 
   async function fetchOrdini() {
     const res = await fetch('/api/ordini', { credentials: 'include' })
     const data = await res.json().catch(() => ({}))
     setOrdini(data.ordini ?? [])
+  }
+
+  async function fetchBlocchi() {
+    const res = await fetch('/api/impostazioni/blocchi', { credentials: 'include' })
+    const data = await res.json().catch(() => ({}))
+    setBlockAsporto(data.blockAsporto ?? false)
+    setBlockDelivery(data.blockDelivery ?? false)
+  }
+
+  async function toggleBlocco(campo: 'blockAsporto' | 'blockDelivery', valore: boolean) {
+    setSavingBlocco(true)
+    if (campo === 'blockAsporto') setBlockAsporto(valore)
+    else setBlockDelivery(valore)
+    await fetch('/api/impostazioni/blocchi', {
+      method: 'PATCH', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [campo]: valore }),
+    })
+    setSavingBlocco(false)
   }
 
   async function fetchTavoli() {
@@ -103,7 +127,7 @@ export default function OrdiniPage() {
   }
 
   useEffect(() => {
-    Promise.all([fetchOrdini(), fetchTavoli(), fetchAppuntamenti()]).finally(() => setLoading(false))
+    Promise.all([fetchOrdini(), fetchTavoli(), fetchAppuntamenti(), fetchBlocchi()]).finally(() => setLoading(false))
     const interval = setInterval(() => { fetchOrdini(); fetchAppuntamenti() }, 15000)
     return () => clearInterval(interval)
   }, [])
@@ -161,8 +185,8 @@ export default function OrdiniPage() {
   const appAttivi = [...appInAttesa, ...appPronti]
   const appCompletati = appOggi.filter(a => a.status === 'completato')
 
-  const ordiniTavolo = ordini.filter(o => o.tavolo !== 'Asporto')
-  const ordiniAsportoWeb = ordini.filter(o => o.tavolo === 'Asporto')
+  const ordiniTavolo = ordini.filter(o => o.tipo === 'tavolo' || (!o.tipo && o.tavolo !== 'Asporto' && o.tavolo !== 'Delivery'))
+  const ordiniAsportoWeb = ordini.filter(o => o.tipo === 'asporto' || o.tipo === 'delivery' || (!o.tipo && (o.tavolo === 'Asporto' || o.tavolo === 'Delivery')))
   const ordiniAttivi = ordiniTavolo.filter(o => o.status !== 'consegnato')
   const ordiniConsegnati = ordiniTavolo.filter(o => o.status === 'consegnato')
   const hasTavoloOrdini = ordiniTavolo.filter(o => o.status !== 'consegnato').length > 0
@@ -183,6 +207,36 @@ export default function OrdiniPage() {
           className="text-sm text-electric-blue hover:text-ink-navy font-medium border border-electric-blue/25 px-3 py-1.5 rounded-lg hover:bg-electric-blue/10 transition-colors">
           ↻ Aggiorna
         </button>
+      </div>
+
+      {/* Switch blocco asporto/delivery */}
+      <div className="bg-white border border-ink-navy/10 rounded-2xl px-4 py-3 flex flex-wrap gap-4 items-center shadow-sm">
+        <p className="text-sm font-semibold text-ink-navy flex-1 min-w-max">Disponibilità ordini online</p>
+        <div className="flex gap-4">
+          {([
+            { campo: 'blockAsporto' as const, label: 'Asporto', emoji: '🛍' },
+            { campo: 'blockDelivery' as const, label: 'Delivery', emoji: '🛵' },
+          ]).map(({ campo, label, emoji }) => {
+            const bloccato = campo === 'blockAsporto' ? blockAsporto : blockDelivery
+            return (
+              <div key={campo} className="flex items-center gap-2 select-none">
+                <span className={`text-sm font-medium ${bloccato ? 'text-red-500' : 'text-ink-navy/60'}`}>
+                  {emoji} {label}
+                </span>
+                <button
+                  type="button"
+                  disabled={savingBlocco}
+                  onClick={() => toggleBlocco(campo, !bloccato)}
+                  className={`relative w-10 h-5 rounded-full transition-colors focus:outline-none disabled:opacity-50 ${bloccato ? 'bg-red-400' : 'bg-green-400'}`}>
+                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform block ${bloccato ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+                <span className={`text-xs font-semibold ${bloccato ? 'text-red-500' : 'text-green-600'}`}>
+                  {bloccato ? 'Sospeso' : 'Attivo'}
+                </span>
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       {loading ? (
@@ -305,7 +359,7 @@ export default function OrdiniPage() {
           {hasCalendarioOrdini && (() => {
             // Unifica ordini online (Ordine) e dal calendario (Appuntamento) in bucket comuni
             type ItemApp = { kind: 'app'; id: string; isDelivery: boolean; label: string; ora: string; note: string }
-            type ItemOrdine = { kind: 'ordine'; id: string; righe: RigaOrdine[]; totale: number; note: string | null; ora: string }
+            type ItemOrdine = { kind: 'ordine'; id: string; isDelivery: boolean; righe: RigaOrdine[]; totale: number; note: string | null; ora: string; clienteNome: string | null; clienteTelefono: string | null; clienteIndirizzo: string | null; clienteOra: string | null }
             type Item = ItemApp | ItemOrdine
 
             const toApp = (a: AppuntamentoOrdine): ItemApp => {
@@ -315,10 +369,19 @@ export default function OrdiniPage() {
               const note = (desc ?? '').replace(/^Da richiesta #\d+$/, '').trim()
               return { kind: 'app', id: a.id, isDelivery, label: a.clienteNome || 'Cliente', ora, note }
             }
-            const toOrdine = (o: Ordine): ItemOrdine => ({
-              kind: 'ordine', id: o.id, righe: o.righe, totale: o.totale, note: o.note,
-              ora: new Date(o.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
-            })
+            const toOrdine = (o: Ordine): ItemOrdine => {
+              let ci: { nome?: string; telefono?: string; indirizzo?: string; ora?: string } = {}
+              try { ci = JSON.parse(o.clienteInfo ?? '{}') } catch {}
+              return {
+                kind: 'ordine', id: o.id, isDelivery: o.tipo === 'delivery',
+                righe: o.righe, totale: o.totale, note: o.note,
+                ora: new Date(o.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
+                clienteNome: ci.nome ?? null,
+                clienteTelefono: ci.telefono ?? null,
+                clienteIndirizzo: ci.indirizzo ?? null,
+                clienteOra: ci.ora ?? null,
+              }
+            }
 
             const daPrepItems: Item[] = [
               ...appInAttesa.map(toApp),
@@ -368,8 +431,12 @@ export default function OrdiniPage() {
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${item.isDelivery ? 'bg-teal-100 text-teal-700' : 'bg-violet-100 text-violet-700'}`}>
                               {item.isDelivery ? 'Delivery' : 'Asporto'}
                             </span></>
-                        : <><p className="font-bold text-ink-navy">Ordine online</p>
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">Asporto</span></>
+                        : <>
+                            <p className="font-bold text-ink-navy">{item.clienteNome || 'Ordine online'}</p>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${item.isDelivery ? 'bg-teal-100 text-teal-700' : 'bg-violet-100 text-violet-700'}`}>
+                              {item.isDelivery ? 'Delivery' : 'Asporto'}
+                            </span>
+                          </>
                       }
                     </div>
                     <p className="text-xs text-ink-navy/35">{item.ora}</p>
@@ -379,15 +446,19 @@ export default function OrdiniPage() {
                 <div className="px-4 py-3 space-y-1.5">
                   {item.kind === 'app'
                     ? <>{item.note && <p className="text-sm text-ink-navy/70">{item.note}</p>}</>
-                    : <>{item.righe.map(r => (
-                        <div key={r.id} className="flex justify-between text-sm">
-                          <span className="text-ink-navy/70">{r.quantita}× {r.nome}</span>
-                          <span className="text-ink-navy/50 font-medium">€{(r.prezzo * r.quantita).toFixed(2)}</span>
-                        </div>
-                      ))}
-                      {item.note && <p className="text-xs text-ink-navy/35 pt-1 italic">{item.note}</p>}
-                      <p className="text-sm font-bold text-ink-navy pt-1">€{item.totale.toFixed(2)}</p>
-                    </>
+                    : <>
+                        {item.clienteOra && <p className="text-xs text-ink-navy/50 font-medium">⏰ Ritiro/consegna: {item.clienteOra}</p>}
+                        {item.clienteTelefono && <p className="text-xs text-ink-navy/50">📞 {item.clienteTelefono}</p>}
+                        {item.clienteIndirizzo && <p className="text-xs text-ink-navy/50">📍 {item.clienteIndirizzo}</p>}
+                        {item.righe.map(r => (
+                          <div key={r.id} className="flex justify-between text-sm">
+                            <span className="text-ink-navy/70">{r.quantita}× {r.nome}</span>
+                            <span className="text-ink-navy/50 font-medium">€{(r.prezzo * r.quantita).toFixed(2)}</span>
+                          </div>
+                        ))}
+                        {item.note && <p className="text-xs text-ink-navy/35 pt-1 italic">{item.note}</p>}
+                        <p className="text-sm font-bold text-ink-navy pt-1">€{item.totale.toFixed(2)}</p>
+                      </>
                   }
                 </div>
                 <CardFooter item={item} stepLabel={stepLabel} stepColor={stepColor} onStep={onStep} />
@@ -445,7 +516,7 @@ export default function OrdiniPage() {
           {(() => {
             const asportoSection = (() => {
               type ItemApp = { kind: 'app'; id: string; isDelivery: boolean; label: string; ora: string; note: string }
-              type ItemOrdine = { kind: 'ordine'; id: string; righe: RigaOrdine[]; totale: number; note: string | null; ora: string }
+              type ItemOrdine = { kind: 'ordine'; id: string; isDelivery: boolean; righe: RigaOrdine[]; totale: number; note: string | null; ora: string; clienteNome: string | null; clienteTelefono: string | null; clienteIndirizzo: string | null; clienteOra: string | null }
               type Item = ItemApp | ItemOrdine
               const toApp = (a: AppuntamentoOrdine): ItemApp => {
                 const isDelivery = inferTipoOrdine(a.servizio) === 'delivery'
@@ -453,13 +524,21 @@ export default function OrdiniPage() {
                 const [desc] = (a.note ?? '').split('\n')
                 return { kind: 'app', id: a.id, isDelivery, label: a.clienteNome || 'Cliente', ora, note: (desc ?? '').replace(/^Da richiesta #\d+$/, '').trim() }
               }
+              const toOrdineEvaso = (o: Ordine): ItemOrdine => {
+                let ci: { nome?: string; telefono?: string; indirizzo?: string; ora?: string } = {}
+                try { ci = JSON.parse(o.clienteInfo ?? '{}') } catch {}
+                return {
+                  kind: 'ordine', id: o.id, isDelivery: o.tipo === 'delivery',
+                  righe: o.righe, totale: o.totale, note: o.note,
+                  ora: new Date(o.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
+                  clienteNome: ci.nome ?? null, clienteTelefono: ci.telefono ?? null,
+                  clienteIndirizzo: ci.indirizzo ?? null, clienteOra: ci.ora ?? null,
+                }
+              }
               return {
                 evasiItems: [
                   ...appCompletati.map(toApp),
-                  ...ordiniAsportoWeb.filter(o => o.status === 'consegnato').map((o): ItemOrdine => ({
-                    kind: 'ordine', id: o.id, righe: o.righe, totale: o.totale, note: o.note,
-                    ora: new Date(o.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
-                  })),
+                  ...ordiniAsportoWeb.filter(o => o.status === 'consegnato').map(toOrdineEvaso),
                 ] as Item[],
               }
             })()
@@ -536,8 +615,10 @@ export default function OrdiniPage() {
                                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${item.isDelivery ? 'bg-teal-100 text-teal-700' : 'bg-violet-100 text-violet-700'}`}>
                                             {item.isDelivery ? 'Delivery' : 'Asporto'}
                                           </span></>
-                                      : <><p className="font-bold text-ink-navy">Ordine online</p>
-                                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">Asporto</span></>
+                                      : <><p className="font-bold text-ink-navy">{item.clienteNome || 'Ordine online'}</p>
+                                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${item.isDelivery ? 'bg-teal-100 text-teal-700' : 'bg-violet-100 text-violet-700'}`}>
+                                            {item.isDelivery ? 'Delivery' : 'Asporto'}
+                                          </span></>
                                     }
                                   </div>
                                   <p className="text-xs text-ink-navy/35">{item.ora}</p>

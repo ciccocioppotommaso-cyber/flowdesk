@@ -8,6 +8,7 @@ interface Dipendente {
   email: string
   ruolo: string | null
   fotoUrl: string | null
+  username: string | null
 }
 
 interface Turno {
@@ -76,6 +77,10 @@ export default function StaffPage() {
   const [formDip, setFormDip] = useState({ nome: '', email: '', ruolo: '', fotoUrl: '' })
   const [formTurno, setFormTurno] = useState({ dipendenteId: '', data: '', oraInizio: '09:00', oraFine: '17:00', ruolo: '', note: '' })
   const [saving, setSaving] = useState(false)
+  const [dipPasswordModal, setDipPasswordModal] = useState<Dipendente | null>(null)
+  const [nuovaPasswordDip, setNuovaPasswordDip] = useState('')
+  const [usernameGenerato, setUsernameGenerato] = useState('')
+  const [savingPassword, setSavingPassword] = useState(false)
   const [linkInviato, setLinkInviato] = useState<string | null>(null)
   const [dipendenteDaModificare, setDipendenteDaModificare] = useState<Dipendente | null>(null)
   const [formModifica, setFormModifica] = useState({ nome: '', email: '', ruolo: '', fotoUrl: '' })
@@ -215,6 +220,23 @@ export default function StaffPage() {
     await fetchAll()
   }
 
+  async function impostaPassword() {
+    if (!dipPasswordModal || !nuovaPasswordDip) return
+    setSavingPassword(true)
+    const res = await fetch(`/api/dipendenti/${dipPasswordModal.id}/set-password`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: nuovaPasswordDip }),
+    })
+    const d = await res.json()
+    setSavingPassword(false)
+    if (res.ok) {
+      setUsernameGenerato(d.username)
+      setNuovaPasswordDip('')
+      await fetchAll()
+    }
+  }
+
   async function eliminaDipendente(id: string) {
     setConferma({ msg: 'Eliminare questo dipendente e tutti i suoi turni?', onConfirm: async () => {
       await fetch(`/api/dipendenti/${id}`, { method: 'DELETE', credentials: 'include' })
@@ -263,13 +285,19 @@ export default function StaffPage() {
   }
 
   async function inviaLink(email: string, nome: string) {
-    await fetch('/api/staff/login', {
+    const res = await fetch('/api/staff/login', {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
     })
-    setLinkInviato(nome)
-    setTimeout(() => setLinkInviato(null), 3000)
+    if (res.ok) {
+      setLinkInviato(nome)
+      setTimeout(() => setLinkInviato(null), 3000)
+    } else {
+      const data = await res.json()
+      setLinkInviato(`Errore: ${data.error || 'impossibile inviare'}`)
+      setTimeout(() => setLinkInviato(null), 4000)
+    }
   }
 
   async function cancellaSettimana() {
@@ -353,8 +381,8 @@ export default function StaffPage() {
       </div>
 
       {linkInviato && (
-        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm font-medium">
-           Link inviato a {linkInviato}
+        <div className={`px-4 py-3 rounded-xl text-sm font-medium ${linkInviato.startsWith('Errore:') ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-green-50 border border-green-200 text-green-700'}`}>
+          {linkInviato.startsWith('Errore:') ? linkInviato : `✉️ Link inviato a ${linkInviato}`}
         </div>
       )}
 
@@ -626,6 +654,21 @@ export default function StaffPage() {
       {/* ── TAB DIPENDENTI ── */}
       {tab === 'dipendenti' && (
         <div className="space-y-3">
+          {/* Banner link area dipendenti */}
+          <div className="bg-purple-50 border border-purple-200 rounded-2xl px-4 py-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold text-purple-800">Link area dipendenti</p>
+              <p className="text-xs text-purple-600 font-mono mt-0.5">
+                {typeof window !== 'undefined' ? window.location.origin : ''}/dipendente/login
+              </p>
+            </div>
+            <button
+              onClick={() => navigator.clipboard.writeText(`${window.location.origin}/dipendente/login`)}
+              className="text-xs px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium shrink-0 transition-colors">
+              Copia link
+            </button>
+          </div>
+
           {dipendenti.length === 0 ? (
             <div className="bg-white rounded-2xl border border-ink-navy/10 p-12 text-center shadow-sm">
               <div className="w-12 h-12 rounded-xl bg-electric-blue/10 text-electric-blue flex items-center justify-center p-3 mx-auto mb-4">
@@ -649,6 +692,7 @@ export default function StaffPage() {
                     <p className="font-semibold text-ink-navy">{d.nome}</p>
                     <p className="text-sm text-ink-navy/50">{d.email}</p>
                     {d.ruolo && <p className="text-xs text-ink-navy/35">{d.ruolo}</p>}
+                    {d.username && <p className="text-xs text-purple-600 font-medium mt-0.5">@{d.username}</p>}
                   </div>
                 </div>
                 <div className="flex gap-2 flex-wrap justify-end">
@@ -659,6 +703,10 @@ export default function StaffPage() {
                   <button onClick={() => inviaLink(d.email, d.nome)}
                     className="text-xs px-3 py-1.5 bg-electric-blue/10 text-electric-blue rounded-lg hover:bg-electric-blue/15 transition-colors font-medium">
                     Invia link
+                  </button>
+                  <button onClick={() => { setDipPasswordModal(d); setNuovaPasswordDip(''); setUsernameGenerato('') }}
+                    className="text-xs px-3 py-1.5 bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 transition-colors font-medium">
+                    {d.username ? '🔑 Reset pw' : '🔑 Imposta accesso'}
                   </button>
                   <button onClick={() => apriModifica(d)}
                     className="text-ink-navy/35 hover:text-electric-blue p-1.5 rounded-lg hover:bg-electric-blue/10 transition-colors">
@@ -790,6 +838,73 @@ export default function StaffPage() {
         </div>
         )
       })()}
+
+      {/* Modal imposta password dipendente */}
+      {dipPasswordModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
+            <h3 className="text-lg font-bold text-ink-navy">
+              {dipPasswordModal.username ? 'Reimposta password' : 'Imposta accesso area dipendenti'}
+            </h3>
+            <div className="bg-mist rounded-xl px-4 py-3 space-y-1">
+              <p className="text-xs text-ink-navy/50 font-medium">Dipendente</p>
+              <p className="text-sm font-semibold text-ink-navy">{dipPasswordModal.nome}</p>
+              {dipPasswordModal.username ? (
+                <p className="text-xs text-purple-600">Username: <span className="font-mono font-semibold">{dipPasswordModal.username}</span></p>
+              ) : (
+                <p className="text-xs text-ink-navy/40">L'username verrà generato automaticamente dal nome</p>
+              )}
+            </div>
+
+            {usernameGenerato ? (
+              <div className="space-y-3">
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
+                  <p className="text-sm font-semibold text-green-800">✅ Accesso configurato</p>
+                  <div className="text-sm text-green-700 space-y-1.5">
+                    <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-green-200">
+                      <span className="text-xs text-green-600">Username</span>
+                      <span className="font-mono font-bold text-green-800">{usernameGenerato}</span>
+                    </div>
+                    <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-green-200">
+                      <span className="text-xs text-green-600">Link accesso</span>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(`${window.location.origin}/dipendente/login`)}
+                        className="font-mono text-xs text-green-800 hover:text-electric-blue underline underline-offset-2">
+                        {typeof window !== 'undefined' ? window.location.origin : ''}/dipendente/login
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-green-600">Manda username, password e link al dipendente. Dovrà cambiare la password al primo accesso.</p>
+                </div>
+                <button onClick={() => { setDipPasswordModal(null); setUsernameGenerato('') }}
+                  className="w-full bg-electric-blue text-white font-semibold py-2.5 rounded-xl text-sm">
+                  Chiudi
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-ink-navy/70 mb-1">Password temporanea *</label>
+                  <input type="text" value={nuovaPasswordDip} onChange={e => setNuovaPasswordDip(e.target.value)}
+                    placeholder="min. 6 caratteri"
+                    className="w-full border border-ink-navy/15 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-electric-blue" />
+                  <p className="text-xs text-ink-navy/35 mt-1">Il dipendente dovrà cambiarla al primo accesso</p>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => { setDipPasswordModal(null); setNuovaPasswordDip('') }}
+                    className="flex-1 border border-ink-navy/15 text-ink-navy/70 font-semibold py-2.5 rounded-xl hover:bg-mist text-sm">
+                    Annulla
+                  </button>
+                  <button onClick={impostaPassword} disabled={savingPassword || nuovaPasswordDip.length < 6}
+                    className="flex-1 bg-purple-600 text-white font-semibold py-2.5 rounded-xl hover:bg-purple-700 text-sm disabled:opacity-50">
+                    {savingPassword ? 'Salvataggio...' : 'Conferma'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Modal modifica dipendente */}
       {dipendenteDaModificare && (
