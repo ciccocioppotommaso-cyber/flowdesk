@@ -19,7 +19,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!dip) return NextResponse.json({ error: 'Dipendente non trovato' }, { status: 404 })
 
     const hash = await bcrypt.hash(password, 10)
-    const username = dip.username ?? generateUsername(dip.nome)
+
+    let username = dip.username
+    if (!username) {
+      const base = generateUsername(dip.nome)
+      username = base
+      let n = 1
+      while (await prisma.dipendente.findFirst({ where: { username, NOT: { id } } })) {
+        username = `${base}${n++}`
+      }
+    }
 
     await prisma.dipendente.update({
       where: { id },
