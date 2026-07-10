@@ -223,17 +223,24 @@ export default function StaffPage() {
   async function impostaPassword() {
     if (!dipPasswordModal || !nuovaPasswordDip) return
     setSavingPassword(true)
-    const res = await fetch(`/api/dipendenti/${dipPasswordModal.id}/set-password`, {
-      method: 'POST', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: nuovaPasswordDip }),
-    })
-    const d = await res.json()
-    setSavingPassword(false)
-    if (res.ok) {
-      setUsernameGenerato(d.username)
-      setNuovaPasswordDip('')
-      await fetchAll()
+    try {
+      const res = await fetch(`/api/dipendenti/${dipPasswordModal.id}/set-password`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: nuovaPasswordDip }),
+      })
+      const d = await res.json()
+      if (res.ok) {
+        setUsernameGenerato(d.username)
+        setNuovaPasswordDip('')
+        await fetchAll()
+      } else {
+        alert(d.error || `Errore ${res.status}`)
+      }
+    } catch (err) {
+      alert('Errore di rete: ' + String(err))
+    } finally {
+      setSavingPassword(false)
     }
   }
 
