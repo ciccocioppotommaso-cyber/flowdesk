@@ -79,7 +79,7 @@ const RICHIESTA_COLOR: Record<string, string> = {
 const inp = 'w-full border border-ink-navy/15 rounded-xl px-3 py-2.5 text-sm text-ink-navy placeholder:text-ink-navy/30 focus:outline-none focus:ring-2 focus:ring-electric-blue/40 focus:border-electric-blue/50 transition bg-white'
 
 function isoDate(d: Date) {
-  return d.toISOString().split('T')[0]
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 export default function StaffDettaglioPage() {
@@ -193,7 +193,7 @@ export default function StaffDettaglioPage() {
   )
   if (!dip) return null
 
-  const oggi = new Date().toISOString().split('T')[0]
+  const oggi = (() => { const _d = new Date(); return `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}` })()
 
   // Pairing globale: entrata→uscita indipendente dal giorno (gestisce mezzanotte)
   const sortedTimbr = [...dip.timbrature].sort((a, b) => a.timestamp.localeCompare(b.timestamp))

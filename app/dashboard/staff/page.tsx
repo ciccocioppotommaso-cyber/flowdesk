@@ -75,7 +75,7 @@ export default function StaffPage() {
   const [nomeLocale, setNomeLocale] = useState<string | null>(null)
 
   // Presenze
-  const oggiStr = new Date().toISOString().split('T')[0]
+  const oggiStr = (() => { const _d = new Date(); return `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}` })()
   const [presenzeData, setPresenzeData] = useState(oggiStr)
   const [presenzeList, setPresenzeList] = useState<{ id: string; tipo: string; timestamp: string; dipendente: { nome: string; ruolo: string | null } }[]>([])
   const [presenzeLoading, setPresenzeLoading] = useState(false)
@@ -546,8 +546,8 @@ export default function StaffPage() {
                       return dataStr >= rStart && dataStr <= rEnd
                     })
                     const tipiAssenza = ['assenza', 'malattia', 'permesso', 'ferie']
-                    const assenza = richiesteGiorno.find(r => tipiAssenza.includes(r.tipo))
-                    const preferenza = richiesteGiorno.find(r => !tipiAssenza.includes(r.tipo))
+                    const assenza = richiesteGiorno.find(r => tipiAssenza.includes(r.tipo) && r.status !== 'rifiutata')
+                    const preferenza = richiesteGiorno.find(r => !tipiAssenza.includes(r.tipo) && r.status !== 'rifiutata')
                     return (
                       <div key={i}
                         onClick={() => setCellModal({ dipendenteId: dip.id, nome: dip.nome, data: dataStr, dataLabel: g.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' }), oraInizio: '09:00', oraFine: '17:00' })}

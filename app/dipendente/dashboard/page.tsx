@@ -276,7 +276,7 @@ export default function DipendenteDashboard() {
   )
   if (!dipendente) return null
 
-  const oggi = new Date().toISOString().split('T')[0]
+  const oggi = (() => { const _d = new Date(); return `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}` })()
   const primoNome = dipendente.nome.split(' ')[0]
   const cognome = dipendente.nome.split(' ').slice(1).join(' ')
 

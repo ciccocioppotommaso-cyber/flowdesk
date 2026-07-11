@@ -485,7 +485,7 @@ export default function TavoliPage() {
   // Turni + vista per giorno
   const [turniServizio, setTurniServizio] = useState<TurnoServizio[]>([])
   const [appuntamenti, setAppuntamenti] = useState<AppuntamentoLight[]>([])
-  const [giornoSel, setGiornoSel] = useState<string>(() => new Date().toISOString().split('T')[0])
+  const [giornoSel, setGiornoSel] = useState<string>(() => (() => { const _d = new Date(); return `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}` })())
   const [turnoSel, setTurnoSel] = useState<string | null>(null)
 
   const mappaRef = useRef<VistaMappHandle>(null)
@@ -667,7 +667,7 @@ export default function TavoliPage() {
             <span className="text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Giorno</span>
             <input type="date" value={giornoSel} onChange={e => setGiornoSel(e.target.value)}
               className="border border-ink-navy/15 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-electric-blue" />
-            <button onClick={() => setGiornoSel(new Date().toISOString().split('T')[0])}
+            <button onClick={() => setGiornoSel((() => { const _d = new Date(); return `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}` })())}
               className="text-xs text-electric-blue font-semibold px-2 py-1 border border-electric-blue/25 rounded-lg hover:bg-electric-blue/10">Oggi</button>
           </div>
           <div className="flex items-center gap-2 flex-wrap">

@@ -53,7 +53,7 @@ export default function MenuAsportoPage({ params }: { params: Promise<{ publicId
   const [inviando, setInviando] = useState(false)
   const [numeroOrdine, setNumeroOrdine] = useState<number | null>(null)
 
-  const oggi = new Date().toISOString().split('T')[0]
+  const oggi = (() => { const _d = new Date(); return `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}` })()
   const [dati, setDati] = useState<DatiCheckout>({
     tipo: 'asporto',
     nome: '', cognome: '', email: '', telefono: '',

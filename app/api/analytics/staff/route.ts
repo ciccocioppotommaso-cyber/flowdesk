@@ -4,6 +4,11 @@ import { prisma } from '@/lib/prisma'
 
 const GIORNI = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab']
 
+// Data locale italiana da un timestamp UTC
+function romeDate(d: Date): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+}
+
 function diffOreMinuti(oraInizio: string, oraFine: string): number {
   const [h1, m1] = oraInizio.split(':').map(Number)
   const [h2, m2] = oraFine.split(':').map(Number)
@@ -39,7 +44,8 @@ export async function GET(req: Request) {
     prisma.timbratura.findMany({
       where: {
         dipendente: { userId: user.id },
-        timestamp: { gte: inizioMese, lt: fineMese <= ora ? fineMese : ora },
+        // +8h per catturare uscite notturne a cavallo di mezzanotte
+        timestamp: { gte: inizioMese, lt: new Date(Math.min((fineMese <= ora ? fineMese : ora).getTime() + 8 * 3600000, ora.getTime())) },
       },
       select: { dipendenteId: true, tipo: true, timestamp: true },
       orderBy: { timestamp: 'asc' },
@@ -68,33 +74,33 @@ export async function GET(req: Request) {
     let giornoTop: string | null
 
     if (fonte === 'cartellino') {
-      // Raggruppa timbrature per giorno, calcola entrata→uscita
-      const perGiornoTimb: Record<string, { entrate: Date[]; uscite: Date[] }> = {}
-      mieTimbrature.forEach(t => {
-        const g = t.timestamp.toISOString().split('T')[0]
-        if (!perGiornoTimb[g]) perGiornoTimb[g] = { entrate: [], uscite: [] }
-        if (t.tipo === 'entrata') perGiornoTimb[g].entrate.push(t.timestamp)
-        else perGiornoTimb[g].uscite.push(t.timestamp)
-      })
+      // Pairing globale entrata→uscita (gestisce cross-mezzanotte)
+      const sorted = [...mieTimbrature].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+      const coppie: { entrata: Date; uscita: Date | null; giorno: string }[] = []
+      let ci = 0
+      while (ci < sorted.length) {
+        if (sorted[ci].tipo === 'entrata') {
+          const usc = sorted[ci + 1]?.tipo === 'uscita' ? sorted[ci + 1].timestamp : null
+          coppie.push({ entrata: sorted[ci].timestamp, uscita: usc, giorno: romeDate(sorted[ci].timestamp) })
+          ci += usc ? 2 : 1
+        } else { ci++ }
+      }
       let minutiTotali = 0
       const perDow = [0, 0, 0, 0, 0, 0, 0]
-      Object.entries(perGiornoTimb).forEach(([g, { entrate, uscite }]) => {
-        const primaEntrata = entrate.sort((a, b) => a.getTime() - b.getTime())[0]
-        const ultimaUscita = uscite.sort((a, b) => a.getTime() - b.getTime()).pop()
-        if (primaEntrata && ultimaUscita) {
-          minutiTotali += (ultimaUscita.getTime() - primaEntrata.getTime()) / 60000
-        }
-        const dow = new Date(g + 'T12:00:00').getDay()
-        perDow[dow]++
+      const giorniSet = new Set<string>()
+      coppie.forEach(({ entrata, uscita, giorno }) => {
+        if (uscita) minutiTotali += (uscita.getTime() - entrata.getTime()) / 60000
+        giorniSet.add(giorno)
+        perDow[new Date(giorno + 'T12:00:00').getDay()]++
       })
       oreLavorate = Math.round(minutiTotali / 60 * 10) / 10
-      giorniLavorati = Object.keys(perGiornoTimb).length
+      giorniLavorati = giorniSet.size
       const giornoTopIdx = perDow.indexOf(Math.max(...perDow))
       giornoTop = giorniLavorati > 0 ? GIORNI[giornoTopIdx] : null
     } else {
       const minutiTotali = mieiTurni.reduce((s, t) => s + diffOreMinuti(t.oraInizio, t.oraFine), 0)
       oreLavorate = Math.round(minutiTotali / 60 * 10) / 10
-      giorniLavorati = new Set(mieiTurni.map(t => t.data.toISOString().split('T')[0])).size
+      giorniLavorati = new Set(mieiTurni.map(t => romeDate(t.data))).size
       const perGiorno = [0, 0, 0, 0, 0, 0, 0]
       mieiTurni.forEach(t => perGiorno[t.data.getDay()]++)
       const giornoTopIdx = perGiorno.indexOf(Math.max(...perGiorno))
@@ -144,24 +150,25 @@ export async function GET(req: Request) {
     const turniPerGiorno: Record<string, { oraInizio: string; oraFine: string; ore: number }[]> = {}
 
     if (fonte === 'cartellino') {
-      const perG: Record<string, { entrate: Date[]; uscite: Date[] }> = {}
-      mieTimbratureDip.forEach(t => {
-        const g = t.timestamp.toISOString().split('T')[0]
-        if (!perG[g]) perG[g] = { entrate: [], uscite: [] }
-        if (t.tipo === 'entrata') perG[g].entrate.push(t.timestamp)
-        else perG[g].uscite.push(t.timestamp)
-      })
-      Object.entries(perG).forEach(([g, { entrate, uscite }]) => {
-        const e = entrate.sort((a, b) => a.getTime() - b.getTime())[0]
-        const u = uscite.sort((a, b) => a.getTime() - b.getTime()).pop()
-        const oraI = e ? e.toTimeString().slice(0, 5) : '—'
-        const oraF = u ? u.toTimeString().slice(0, 5) : '—'
-        const ore = (e && u) ? Math.round((u.getTime() - e.getTime()) / 360000) / 10 : 0
-        turniPerGiorno[g] = [{ oraInizio: oraI, oraFine: oraF, ore }]
-      })
+      // Pairing globale entrata→uscita (gestisce cross-mezzanotte)
+      const sortedDip = [...mieTimbratureDip].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+      let di = 0
+      while (di < sortedDip.length) {
+        if (sortedDip[di].tipo === 'entrata') {
+          const e = sortedDip[di].timestamp
+          const u = sortedDip[di + 1]?.tipo === 'uscita' ? sortedDip[di + 1].timestamp : null
+          const g = romeDate(e)
+          const oraI = e.toTimeString().slice(0, 5)
+          const oraF = u ? u.toTimeString().slice(0, 5) : '—'
+          const ore = u ? Math.round((u.getTime() - e.getTime()) / 360000) / 10 : 0
+          if (!turniPerGiorno[g]) turniPerGiorno[g] = []
+          turniPerGiorno[g].push({ oraInizio: oraI, oraFine: oraF, ore })
+          di += u ? 2 : 1
+        } else { di++ }
+      }
     } else {
       mieiTurni.forEach(t => {
-        const k = t.data.toISOString().split('T')[0]
+        const k = romeDate(t.data)
         if (!turniPerGiorno[k]) turniPerGiorno[k] = []
         turniPerGiorno[k].push({ oraInizio: t.oraInizio, oraFine: t.oraFine, ore: Math.round(diffOreMinuti(t.oraInizio, t.oraFine) / 60 * 10) / 10 })
       })

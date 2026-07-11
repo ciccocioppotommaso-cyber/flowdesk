@@ -208,7 +208,7 @@ export default function StaffAreaPage() {
     </div>
   )
 
-  const oggi = new Date().toISOString().split('T')[0]
+  const oggi = (() => { const _d = new Date(); return `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}` })()
 
   const primoGiornoMese = new Date(meseCal.getFullYear(), meseCal.getMonth(), 1)
   const ultimoGiornoMese = new Date(meseCal.getFullYear(), meseCal.getMonth() + 1, 0)
