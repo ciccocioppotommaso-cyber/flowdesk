@@ -82,7 +82,9 @@ export async function GET(req: Request) {
       rangeLabel = String(rif.getFullYear())
     }
 
-    const fineBuffer = new Date(fine.getTime() + 8 * 3600000)
+    const ora = new Date()
+    const fineEffettiva = new Date(Math.min(fine.getTime(), ora.getTime()))
+    const fineBuffer = new Date(Math.min(fine.getTime() + 8 * 3600000, ora.getTime()))
 
     const [dip, turni, timbrature, richieste, anyTimbriLocale] = await Promise.all([
       prisma.dipendente.findFirst({
@@ -90,7 +92,7 @@ export async function GET(req: Request) {
         select: { id: true, nome: true, ruolo: true },
       }),
       prisma.turno.findMany({
-        where: { dipendenteId: dipId, userId: user.id, data: { gte: inizio, lt: fine } },
+        where: { dipendenteId: dipId, userId: user.id, data: { gte: inizio, lt: fineEffettiva } },
         select: { data: true, oraInizio: true, oraFine: true },
         orderBy: { data: 'asc' },
       }),
