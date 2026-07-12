@@ -903,7 +903,6 @@ export default function DipendenteDashboard() {
                 <label className="block text-xs font-semibold text-ink-navy/50 mb-1.5 uppercase tracking-wide">Tipo</label>
                 <select value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))} className={inp}>
                   <option value="malattia">Malattia</option>
-                  <option value="assenza">Assenza</option>
                   <option value="permesso">Permesso</option>
                   <option value="ferie">Ferie</option>
                   <option value="preferenza_orario">Preferenza orario</option>

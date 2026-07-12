@@ -12,8 +12,8 @@ export async function POST(req: Request) {
 
   // Trova tutti i conti aperti per questo tavolo/gruppo
   const where = gruppoId
-    ? { userId: user.id, gruppoId, status: 'aperto' }
-    : { userId: user.id, tavoloId, gruppoId: null, status: 'aperto' }
+    ? { userId: user.id, gruppoId, status: { notIn: ['chiuso'] } }
+    : { userId: user.id, tavoloId, gruppoId: null, status: { notIn: ['chiuso'] } }
 
   await prisma.ordine.updateMany({ where, data: { status: 'chiuso' } })
 

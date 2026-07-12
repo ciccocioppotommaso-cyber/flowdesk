@@ -62,7 +62,20 @@ function scaricaPdf(
 
   const totaleOre = Math.round(righe.reduce((s, r) => s + r.ore, 0) * 10) / 10
 
-  const ritardiRows = ritardi.filter(r => r.hasTimbro && (r.ritardoMin > 2 || r.straordinarioMin > 5))
+  const ritardiRows = ritardi.filter(r => r.hasTimbro && (r.ritardoMin > 5 || r.straordinarioMin > 5))
+  const assenzaRows = ritardi.filter(r => !r.hasTimbro)
+  const assenzaHtml = opzioni.includiRitardi && assenzaRows.length > 0 ? `
+    <h2 style="font-size:15px;font-weight:700;margin:28px 0 10px;color:#dc2626">Assenze ingiustificate</h2>
+    <table>
+      <thead><tr><th style="background:#dc2626">Data</th><th style="background:#dc2626">Turno previsto</th></tr></thead>
+      <tbody>
+        ${assenzaRows.map(r => `
+          <tr style="background:#fef2f2">
+            <td style="color:#dc2626;font-weight:600">${fmtData(r.data)}</td>
+            <td>${r.turni.map(t => t.inizio + '–' + t.fine).join(', ')}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>` : ''
   const ritardiHtml = opzioni.includiRitardi && ritardiRows.length > 0 ? `
     <h2 style="font-size:15px;font-weight:700;margin:28px 0 10px">Ritardi &amp; Straordinari</h2>
     <table>
@@ -73,11 +86,12 @@ function scaricaPdf(
             <td>${fmtData(r.data)}</td>
             <td>${r.turni.map(t => t.inizio + '–' + t.fine).join(', ')}</td>
             <td>${r.timbri.map(t => t.inizio + '–' + t.fine).join(', ') || '—'}</td>
-            <td class="ore" style="color:${r.ritardoMin > 2 ? '#dc2626' : '#16a34a'}">${r.ritardoMin > 2 ? minToLabel(r.ritardoMin) : '—'}</td>
+            <td class="ore" style="color:${r.ritardoMin > 5 ? '#dc2626' : '#16a34a'}">${r.ritardoMin > 5 ? minToLabel(r.ritardoMin) : '—'}</td>
             <td class="ore" style="color:${r.straordinarioMin > 5 ? '#2563eb' : '#6b7280'}">${r.straordinarioMin > 5 ? minToLabel(r.straordinarioMin) : '—'}</td>
           </tr>`).join('')}
       </tbody>
-    </table>` : ''
+    </table>
+    <p style="font-size:11px;color:#888;margin-top:6px">* Il ritardo include sia entrate tardive che uscite anticipate rispetto al turno previsto.</p>` : ''
 
   const tipiLabel: Record<string, string> = {
     ferie: 'Ferie', malattia: 'Malattia', permesso: 'Permesso', assenza: 'Assenza',
@@ -130,6 +144,7 @@ function scaricaPdf(
     <tr class="total-row"><td colspan="2">Totale ore</td><td class="ore">${totaleOre}h</td></tr>
   </tbody>
 </table>
+${assenzaHtml}
 ${ritardiHtml}
 ${richiesteHtml}
 <div style="margin-top:24px;font-size:11px;color:#aaa;">Generato il ${new Date().toLocaleDateString('it-IT')}</div>
@@ -492,9 +507,10 @@ export default function AnalyticsPage() {
   const giorniLavoratiDettaglio = Object.keys(perGiornoDettaglio).length
 
   const ritardiConTimbro = dettaglio ? dettaglio.ritardi.filter(r => r.hasTimbro) : []
+  const assenzeIngiustificate = dettaglio ? dettaglio.ritardi.filter(r => !r.hasTimbro) : []
   const ritardiMin = ritardiConTimbro.reduce((s, r) => s + r.ritardoMin, 0)
   const straordMin = ritardiConTimbro.reduce((s, r) => s + r.straordinarioMin, 0)
-  const ritardiCount = ritardiConTimbro.filter(r => r.ritardoMin > 2).length
+  const ritardiCount = ritardiConTimbro.filter(r => r.ritardoMin > 5).length
   const straordCount = ritardiConTimbro.filter(r => r.straordinarioMin > 5).length
   // aggregazione per mese (per vista anno nel modal)
   const ritardiPerMese: Record<string, { ritardoMin: number; straordinarioMin: number }> = {}
@@ -506,9 +522,16 @@ export default function AnalyticsPage() {
   })
 
   const richiesteDettaglio = dettaglio?.richieste ?? []
-  const ferieR = richiesteDettaglio.filter(r => r.tipo === 'ferie')
-  const malattieR = richiesteDettaglio.filter(r => r.tipo === 'malattia')
-  const permessiR = richiesteDettaglio.filter(r => r.tipo === 'permesso')
+  const filtraPerPeriodo = (tipo: string) => richiesteDettaglio.filter(r => {
+    if (r.tipo !== tipo) return false
+    if (dettaglio?.periodo === 'settimana' && r.data) {
+      return r.data >= (dettaglio.inizioPeriodo ?? '') && r.data < (dettaglio.finePeriodo ?? '')
+    }
+    return true
+  })
+  const ferieR = filtraPerPeriodo('ferie')
+  const malattieR = filtraPerPeriodo('malattia')
+  const permessiR = filtraPerPeriodo('permesso')
   const preferenzeR = richiesteDettaglio.filter(r => r.tipo === 'preferenza_orario')
 
   // Per anno: breakdown per mese
@@ -1064,7 +1087,7 @@ export default function AnalyticsPage() {
                     {/* Ritardi & Straordinari — mini preview, dettaglio nei KPI cliccabili */}
                     <div className="bg-white rounded-2xl border border-ink-navy/10 shadow-sm p-5">
                       <p className="text-sm font-semibold text-ink-navy">Ritardi & Straordinari</p>
-                      <p className="text-xs text-ink-navy/40 mt-0.5">Orario turno vs timbro effettivo</p>
+                      <p className="text-xs text-ink-navy/40 mt-0.5">Orario turno vs timbro effettivo · il ritardo include sia entrate tardive che uscite anticipate</p>
                       {!dettaglio.usaTimbri ? (
                         <div className="mt-4 flex items-center gap-2 bg-mist rounded-xl p-3">
                           <svg className="w-4 h-4 text-ink-navy/30 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -1075,7 +1098,7 @@ export default function AnalyticsPage() {
                       ) : (
                         <div className="mt-4 space-y-2">
                           {ritardiConTimbro.slice(0, 7).map((r, i) => {
-                            const isRit = r.ritardoMin > 2
+                            const isRit = r.ritardoMin > 5
                             const isStr = r.straordinarioMin > 5
                             const maxMin = Math.max(...ritardiConTimbro.map(x => Math.max(x.ritardoMin, x.straordinarioMin)), 1)
                             const ritPct = Math.round((r.ritardoMin / maxMin) * 100)
@@ -1103,6 +1126,19 @@ export default function AnalyticsPage() {
                             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-electric-blue/30 inline-block"/>Straordinario</span>
                           </div>
                           <p className="text-[10px] text-ink-navy/30 text-center pt-1">Tocca i box ritardi/straordinari in alto per il dettaglio</p>
+                          {assenzeIngiustificate.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-red-100">
+                              <p className="text-[10px] font-semibold text-red-500 uppercase tracking-wide mb-1.5">Assenze ingiustificate ({assenzeIngiustificate.length})</p>
+                              <div className="space-y-1">
+                                {assenzeIngiustificate.map((r, i) => (
+                                  <div key={i} className="flex items-center justify-between text-[10px] bg-red-50 rounded px-2 py-1">
+                                    <span className="text-red-600 font-semibold">{fmtData(r.data)}</span>
+                                    <span className="text-red-400">{r.turni.map(t => t.inizio + '–' + t.fine).join(', ')}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1310,7 +1346,7 @@ export default function AnalyticsPage() {
                                   })}
                                 </div>
                                 <div className="mt-3 divide-y divide-ink-navy/6">
-                                  {ritardiConTimbro.filter(r => (modalKpi === 'ritardi' ? r.ritardoMin > 2 : r.straordinarioMin > 5)).map((r, i) => (
+                                  {ritardiConTimbro.filter(r => (modalKpi === 'ritardi' ? r.ritardoMin > 5 : r.straordinarioMin > 5)).map((r, i) => (
                                     <div key={i} className="py-3 flex items-start justify-between text-sm">
                                       <div>
                                         <p className="font-medium text-ink-navy">{fmtData(r.data)}</p>

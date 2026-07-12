@@ -163,11 +163,11 @@ export async function GET(req: Request) {
       const timbriGiorno = timbraturePerGiorno[data] ?? []
       const hasTimbro = timbriGiorno.length > 0
       const turniInv: [number, number][] = ts
-        .map(t => [oraToMin(t.oraInizio), oraToMin(t.oraFine)] as [number, number])
+        .map(t => { const s = oraToMin(t.oraInizio), e = oraToMin(t.oraFine); return [s, e < s ? e + 1440 : e] as [number, number] })
         .filter(([s, e]) => !isNaN(s) && !isNaN(e))
       const timbriInv: [number, number][] = timbriGiorno
         .filter(tb => tb.oraFine !== '—')
-        .map(tb => [oraToMin(tb.oraInizio), oraToMin(tb.oraFine)] as [number, number])
+        .map(tb => { const s = oraToMin(tb.oraInizio), e = oraToMin(tb.oraFine); return [s, e < s ? e + 1440 : e] as [number, number] })
         .filter(([s, e]) => !isNaN(s) && !isNaN(e))
       const ritardoMin = hasTimbro ? intervalDiff(turniInv, timbriInv) : 0
       const straordinarioMin = intervalDiff(timbriInv, turniInv)
@@ -314,7 +314,7 @@ export async function GET(req: Request) {
         const entrataMin = oraToMin(tb.oraInizio)
         if (isNaN(entrataMin)) return
         const rit = entrataMin - oraToMin(t.oraInizio)
-        if (rit > 2) { ritardiCount++; ritardiMinTot += rit }
+        if (rit > 5) { ritardiCount++; ritardiMinTot += rit }
       })
     }
 

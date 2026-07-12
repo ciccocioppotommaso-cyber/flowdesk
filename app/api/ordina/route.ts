@@ -38,7 +38,7 @@ export async function POST(req: Request) {
 
   // Cerca il gruppo attivo per questo tavolo (senza vincoli temporali — il conto è aperto fino a chiusura manuale)
   let gruppoId: string | null = null
-  let tavoloLabel = tavolo
+  let tavoloLabel = tavoloId ? `T${tavolo}` : tavolo
 
   if (tavoloId) {
     const oggi = new Date()
@@ -52,12 +52,16 @@ export async function POST(req: Request) {
       let turnoIniziatoOGia = true
       if (gruppo.turnoId) {
         try {
-          const turni: { id: string; oraInizio: string }[] = JSON.parse((user as any).turniServizio ?? '[]')
+          const turni: { id: string; oraInizio: string; oraFine: string }[] = JSON.parse((user as any).turniServizio ?? '[]')
           const turno = turni.find(t => t.id === gruppo.turnoId)
           if (turno) {
             const [h, m] = turno.oraInizio.split(':').map(Number)
+            const [hF, mF] = turno.oraFine.split(':').map(Number)
             const nowMin = localOggi.getHours() * 60 + localOggi.getMinutes()
-            turnoIniziatoOGia = nowMin >= h * 60 + m
+            const startMin = h * 60 + m
+            let endMin = hF * 60 + mF
+            if (endMin <= startMin) endMin += 24 * 60
+            turnoIniziatoOGia = nowMin >= startMin && nowMin < endMin
           }
         } catch {}
       }
