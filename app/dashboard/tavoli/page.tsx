@@ -59,25 +59,28 @@ function QRCanvas({ url, id }: { url: string; id: string }) {
 }
 
 // ── Vista CONTO ───────────────────────────────────────────────────────────────
-function VistaConto({ ordiniAperti, ordiniChiusi, onChiudi, chiudendo }: {
+function VistaConto({ ordiniAperti, ordiniChiusi, onChiudi, chiudendo, onRiapri, onElimina }: {
   ordiniAperti: Ordine[]
   ordiniChiusi: Ordine[]
   onChiudi: (o: Ordine) => void
   chiudendo: string | null
+  onRiapri: (o: Ordine) => void
+  onElimina: (o: Ordine) => void
 }) {
   const fmt = (n: number) => `€${n.toFixed(2)}`
+  const [confermaElimina, setConfermaElimina] = useState<string | null>(null)
 
   function OrdineCard({ o, aperto }: { o: Ordine; aperto: boolean }) {
     const ora = new Date(o.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
     return (
-      <div className={`bg-white border rounded-xl overflow-hidden ${aperto ? 'border-electric-blue/30 shadow-sm' : 'border-ink-navy/10 opacity-60'}`}>
+      <div className={`bg-white border rounded-xl overflow-hidden ${aperto ? 'border-electric-blue/30 shadow-sm' : 'border-ink-navy/10'}`}>
         {/* Header */}
         <div className={`px-4 py-3 flex items-center justify-between gap-3 ${aperto ? 'bg-electric-blue/5' : 'bg-mist'}`}>
           <div className="flex items-center gap-2">
             <span className={`text-sm font-bold ${aperto ? 'text-electric-blue' : 'text-ink-navy/50'}`}>
               {o.tavolo}
             </span>
-            <span className="text-xs text-ink-navy/35">aperto {ora}</span>
+            <span className="text-xs text-ink-navy/35">{aperto ? 'aperto' : 'chiuso'} {ora}</span>
           </div>
           <div className="flex items-center gap-2">
             <span className={`text-base font-bold ${aperto ? 'text-ink-navy' : 'text-ink-navy/40'}`}>{fmt(o.totale)}</span>
@@ -90,12 +93,23 @@ function VistaConto({ ordiniAperti, ordiniChiusi, onChiudi, chiudendo }: {
               </button>
             )}
             {!aperto && (
-              <span className="text-xs bg-emerald-100 text-emerald-700 font-semibold px-2 py-0.5 rounded-full">Chiuso</span>
+              <>
+                <span className="text-xs bg-emerald-100 text-emerald-700 font-semibold px-2 py-0.5 rounded-full">Chiuso</span>
+                <button onClick={() => onRiapri(o)} className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-ink-navy/15 text-ink-navy/60 hover:bg-mist transition-colors">Riapri</button>
+                {confermaElimina === o.id ? (
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => setConfermaElimina(null)} className="text-xs px-2 py-1 rounded-lg border border-ink-navy/15 text-ink-navy/50">No</button>
+                    <button onClick={() => { onElimina(o); setConfermaElimina(null) }} className="text-xs px-2 py-1 rounded-lg bg-red-500 text-white font-semibold">Sì</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfermaElimina(o.id)} className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-red-200 text-red-400 hover:bg-red-50 transition-colors">Elimina</button>
+                )}
+              </>
             )}
           </div>
         </div>
         {/* Righe */}
-        <div className="divide-y divide-ink-navy/6">
+        <div className={`divide-y divide-ink-navy/6 ${!aperto ? 'opacity-60' : ''}`}>
           {o.righe.map(r => (
             <div key={r.id} className="flex items-center justify-between px-4 py-2.5 gap-3">
               <div className="flex items-center gap-2 min-w-0">
@@ -135,7 +149,9 @@ function VistaConto({ ordiniAperti, ordiniChiusi, onChiudi, chiudendo }: {
       {/* Conti chiusi oggi */}
       {ordiniChiusi.length > 0 && (
         <div>
-          <h2 className="text-sm font-semibold text-ink-navy/50 uppercase tracking-wider mb-3">Chiusi oggi</h2>
+          <h2 className="text-sm font-semibold text-ink-navy/50 uppercase tracking-wider mb-3">
+            Chiusi oggi <span className="text-ink-navy/30 font-normal normal-case tracking-normal text-xs">(si azzerano alle 04:00)</span>
+          </h2>
           <div className="space-y-3">
             {ordiniChiusi.map(o => <OrdineCard key={o.id} o={o} aperto={false} />)}
           </div>
@@ -628,6 +644,20 @@ export default function TavoliPage() {
       setChiudendo(null)
     }
   }
+
+  async function riapriConto(o: Ordine) {
+    await fetch(`/api/ordini/${o.id}`, {
+      method: 'PATCH', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'aperto' }),
+    })
+    await fetchOrdini()
+  }
+
+  async function eliminaOrdine(o: Ordine) {
+    await fetch(`/api/ordini/${o.id}`, { method: 'DELETE', credentials: 'include' })
+    await fetchOrdini()
+  }
   const giornoSelRef = useRef(giornoSel)
   const turnoSelRef = useRef(turnoSel)
   useEffect(() => { giornoSelRef.current = giornoSel }, [giornoSel])
@@ -878,7 +908,9 @@ export default function TavoliPage() {
               ordiniAperti={ordiniAperti}
               ordiniChiusi={ordiniChiusi}
               onChiudi={chiudiConto}
-              chiudendo={chiudendo} />
+              chiudendo={chiudendo}
+              onRiapri={riapriConto}
+              onElimina={eliminaOrdine} />
           )}
         </>
       )}

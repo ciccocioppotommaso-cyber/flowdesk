@@ -49,8 +49,22 @@ export async function POST(req: Request) {
       where: { userId: user.id, data: dataStr, tavoli: { some: { id: tavoloId } } },
     })
     if (gruppo) {
-      gruppoId = gruppo.id
-      tavoloLabel = `T${gruppo.label}`
+      let turnoIniziatoOGia = true
+      if (gruppo.turnoId) {
+        try {
+          const turni: { id: string; oraInizio: string }[] = JSON.parse((user as any).turniServizio ?? '[]')
+          const turno = turni.find(t => t.id === gruppo.turnoId)
+          if (turno) {
+            const [h, m] = turno.oraInizio.split(':').map(Number)
+            const nowMin = localOggi.getHours() * 60 + localOggi.getMinutes()
+            turnoIniziatoOGia = nowMin >= h * 60 + m
+          }
+        } catch {}
+      }
+      if (turnoIniziatoOGia) {
+        gruppoId = gruppo.id
+        tavoloLabel = `T${gruppo.label}`
+      }
     }
   }
 

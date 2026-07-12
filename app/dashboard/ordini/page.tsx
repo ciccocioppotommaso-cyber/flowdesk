@@ -41,15 +41,17 @@ interface AppuntamentoOrdine {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; next: string; nextLabel: string }> = {
+  aperto: { label: 'Nuovo', color: 'bg-amber-100 text-amber-700 border-amber-200', next: 'pronto', nextLabel: 'Pronto' },
   nuovo: { label: 'Nuovo', color: 'bg-amber-100 text-amber-700 border-amber-200', next: 'pronto', nextLabel: 'Pronto' },
   in_preparazione: { label: 'In preparazione', color: 'bg-blue-100 text-blue-700 border-blue-200', next: 'pronto', nextLabel: 'Pronto' },
   pronto: { label: 'Pronto', color: 'bg-green-100 text-green-700 border-green-200', next: 'consegnato', nextLabel: 'Consegnato' },
   consegnato: { label: 'Consegnato', color: 'bg-mist text-ink-navy/50 border-ink-navy/10', next: '', nextLabel: '' },
+  chiuso: { label: 'Chiuso', color: 'bg-mist text-ink-navy/50 border-ink-navy/10', next: '', nextLabel: '' },
 }
 
 const GRUPPI = [
-  { key: 'nuovo', label: 'Nuovi' },
-  { key: 'pronto', label: 'Pronti' },
+  { key: 'nuovi', label: 'Nuovi', statuses: ['aperto', 'nuovo', 'in_preparazione'] },
+  { key: 'pronti', label: 'Pronti', statuses: ['pronto'] },
 ]
 
 function inferTipoOrdine(servizio?: string): 'ordine' | 'delivery' | null {
@@ -186,9 +188,9 @@ export default function OrdiniPage() {
 
   const ordiniTavolo = ordini.filter(o => o.tipo === 'tavolo' || (!o.tipo && o.tavolo !== 'Asporto' && o.tavolo !== 'Delivery'))
   const ordiniAsportoWeb = ordini.filter(o => o.tipo === 'asporto' || o.tipo === 'delivery' || (!o.tipo && (o.tavolo === 'Asporto' || o.tavolo === 'Delivery')))
-  const ordiniAttivi = ordiniTavolo.filter(o => o.status !== 'consegnato')
-  const ordiniConsegnati = ordiniTavolo.filter(o => o.status === 'consegnato')
-  const hasTavoloOrdini = ordiniTavolo.filter(o => o.status !== 'consegnato').length > 0
+  const ordiniAttivi = ordiniTavolo.filter(o => !['consegnato', 'chiuso'].includes(o.status))
+  const ordiniConsegnati = ordiniTavolo.filter(o => o.status === 'consegnato' || o.status === 'chiuso')
+  const hasTavoloOrdini = ordiniAttivi.length > 0
   const hasCalendarioOrdini = appOggi.length > 0 || ordiniAsportoWeb.length > 0
 
   return (
@@ -261,7 +263,7 @@ export default function OrdiniPage() {
               </div>
               <div className="p-5 space-y-8">
                 {GRUPPI.map(g => {
-                  const lista = ordiniTavolo.filter(o => o.status === g.key)
+                  const lista = ordiniTavolo.filter(o => g.statuses.includes(o.status))
                   if (lista.length === 0) return null
                   return (
                     <div key={g.key}>
