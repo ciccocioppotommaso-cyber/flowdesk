@@ -49,7 +49,11 @@ export async function POST(req: Request) {
       where: { userId: user.id, data: dataStr, tavoli: { some: { id: tavoloId } } },
     })
     if (gruppo) {
-      let turnoIniziatoOGia = true
+      // Buffer di 30 min dalla creazione del gruppo: i tavoli restano legati
+      // anche se il turno finisce nel mentre (es. cameriere ha appena unito i tavoli)
+      const gruppoAgeMin = (Date.now() - new Date(gruppo.createdAt).getTime()) / 60000
+      const withinBuffer = gruppoAgeMin < 30
+
       let turnoAncoraAttivo = true
       if (gruppo.turnoId) {
         try {
@@ -62,30 +66,33 @@ export async function POST(req: Request) {
             const startMin = hs * 60 + ms
             let endMin = hf * 60 + mf
             if (endMin <= startMin) endMin += 24 * 60
-            turnoIniziatoOGia = nowMin >= startMin
             turnoAncoraAttivo = nowMin >= startMin && nowMin < endMin
           }
         } catch {}
       }
-      if (turnoIniziatoOGia) {
-        const ultimoOrdine = await prisma.ordine.findFirst({
-          where: { gruppoId: gruppo.id },
-          orderBy: { createdAt: 'desc' },
-          select: { status: true },
-        })
-        let legati = false
-        if (!ultimoOrdine) {
-          // Nessun conto mai aperto: legati solo finché il turno è in corso
-          legati = turnoAncoraAttivo
-        } else if (ultimoOrdine.status !== 'chiuso') {
-          // Conto aperto: sempre legati
-          legati = true
-        }
-        // else conto chiuso manualmente → slegati (legati = false)
-        if (legati) {
-          gruppoId = gruppo.id
-          tavoloLabel = `T${gruppo.label}`
-        }
+
+      const ultimoOrdine = await prisma.ordine.findFirst({
+        where: { gruppoId: gruppo.id },
+        orderBy: { createdAt: 'desc' },
+        select: { status: true },
+      })
+
+      let legati = false
+      if (ultimoOrdine && ultimoOrdine.status !== 'chiuso') {
+        // Conto aperto: sempre legati, indipendentemente da turno e buffer
+        legati = true
+      } else if (withinBuffer) {
+        // Entro 30 min dalla creazione: legati anche se il turno è finito
+        legati = true
+      } else {
+        // Oltre il buffer e nessun conto aperto: legati solo se il turno è ancora in corso
+        legati = turnoAncoraAttivo
+      }
+      // conto chiuso manualmente → legati rimane false (già coperto dall'else)
+
+      if (legati) {
+        gruppoId = gruppo.id
+        tavoloLabel = `T${gruppo.label}`
       }
     }
   }

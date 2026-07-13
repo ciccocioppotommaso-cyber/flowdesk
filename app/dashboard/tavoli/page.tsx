@@ -2,6 +2,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import { IconTable, IconCheck, IconTrash, IconPencil, IconUnlink } from '../../components/icons'
+import { ModificaOrdineModal } from '../components/ModificaOrdineModal'
 
 // ── Tipi ─────────────────────────────────────────────────────────────────────
 interface Tavolo { id: string; numero: number; etichetta: string | null; posti: number; note: string | null; gruppoId: string | null }
@@ -625,8 +626,6 @@ export default function TavoliPage() {
   // Modal conto da mappa
   const [contoModal, setContoModal] = useState<{ tavoloId: string; gruppoId: string | null; label: string } | null>(null)
   const [contoModificaOrdine, setContoModificaOrdine] = useState<Ordine | null>(null)
-  const [contoRigheLocali, setContoRigheLocali] = useState<RigaOrdine[]>([])
-  const [contoSalvando, setContoSalvando] = useState(false)
 
   // Modal modifica
   const [conferma, setConferma] = useState<{ msg: string; onConfirm: () => void } | null>(null)
@@ -690,51 +689,6 @@ export default function TavoliPage() {
   async function eliminaOrdine(o: Ordine) {
     await fetch(`/api/ordini/${o.id}`, { method: 'DELETE', credentials: 'include' })
     await fetchOrdini()
-  }
-
-  function apriContoModifica(o: Ordine) {
-    setContoModificaOrdine(o)
-    setContoRigheLocali([...o.righe])
-  }
-
-  async function contoRimuoviRiga(rigaId: string) {
-    if (!contoModificaOrdine) return
-    setContoRigheLocali(prev => prev.filter(r => r.id !== rigaId))
-    setContoSalvando(true)
-    const res = await fetch(`/api/ordini/${contoModificaOrdine.id}/riga`, {
-      method: 'DELETE', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rigaId }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (data.ordine) {
-      setOrdiniAperti(prev => prev.map(x => x.id === contoModificaOrdine.id ? { ...x, totale: data.ordine.totale, righe: contoRigheLocali.filter(r => r.id !== rigaId) } : x))
-      setContoModificaOrdine(prev => prev ? { ...prev, totale: data.ordine.totale } : null)
-    }
-    setContoSalvando(false)
-    fetchOrdini()
-  }
-
-  async function contoCambiaQuantita(rigaId: string, delta: number) {
-    if (!contoModificaOrdine) return
-    const riga = contoRigheLocali.find(r => r.id === rigaId)
-    if (!riga) return
-    const nuova = riga.quantita + delta
-    if (nuova <= 0) { contoRimuoviRiga(rigaId); return }
-    setContoRigheLocali(prev => prev.map(r => r.id === rigaId ? { ...r, quantita: nuova } : r))
-    setContoSalvando(true)
-    const res = await fetch(`/api/ordini/${contoModificaOrdine.id}/riga`, {
-      method: 'PATCH', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rigaId, quantita: nuova }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (data.ordine) {
-      setOrdiniAperti(prev => prev.map(x => x.id === contoModificaOrdine.id ? { ...x, totale: data.ordine.totale } : x))
-      setContoModificaOrdine(prev => prev ? { ...prev, totale: data.ordine.totale } : null)
-    }
-    setContoSalvando(false)
-    fetchOrdini()
   }
 
   const giornoSelRef = useRef(giornoSel)
@@ -996,37 +950,7 @@ export default function TavoliPage() {
               </div>
               {!ordineAperto ? (
                 <div className="px-5 py-8 text-center text-sm text-ink-navy/30">Nessun conto aperto per questo tavolo</div>
-              ) : contoModificaOrdine ? (
-                // Modalità modifica righe
-                <>
-                  <div className="px-5 py-3 bg-electric-blue/5 border-b border-ink-navy/8">
-                    <p className="text-xs text-ink-navy/50">Modifica righe — l'ordine resta aperto</p>
-                  </div>
-                  <div className="divide-y divide-ink-navy/6 max-h-72 overflow-y-auto">
-                    {contoRigheLocali.length === 0 && <p className="px-5 py-4 text-sm text-ink-navy/30 text-center">Ordine vuoto</p>}
-                    {contoRigheLocali.map(r => (
-                      <div key={r.id} className="flex items-center gap-3 px-5 py-3">
-                        <span className="flex-1 text-sm text-ink-navy truncate">{r.nome}</span>
-                        <span className="text-sm text-ink-navy/50 shrink-0">{fmt(r.prezzo * r.quantita)}</span>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button onClick={() => contoCambiaQuantita(r.id, -1)} disabled={contoSalvando}
-                            className="w-6 h-6 rounded-full bg-ink-navy/8 hover:bg-ink-navy/15 text-ink-navy font-bold text-sm flex items-center justify-center disabled:opacity-40">−</button>
-                          <span className="w-5 text-center text-sm font-semibold text-ink-navy">{r.quantita}</span>
-                          <button onClick={() => contoCambiaQuantita(r.id, +1)} disabled={contoSalvando}
-                            className="w-6 h-6 rounded-full bg-ink-navy/8 hover:bg-ink-navy/15 text-ink-navy font-bold text-sm flex items-center justify-center disabled:opacity-40">+</button>
-                        </div>
-                        <button onClick={() => contoRimuoviRiga(r.id)} disabled={contoSalvando}
-                          className="text-red-400 hover:text-red-600 text-sm font-bold disabled:opacity-40 pl-1">✕</button>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="px-5 py-3 border-t border-ink-navy/8 flex items-center justify-between">
-                    <span className="text-sm font-bold text-ink-navy">{fmt(contoRigheLocali.reduce((s, r) => s + r.prezzo * r.quantita, 0))}</span>
-                    <button onClick={() => setContoModificaOrdine(null)} className="text-xs text-electric-blue font-semibold hover:underline">← Torna al conto</button>
-                  </div>
-                </>
               ) : (
-                // Vista conto normale
                 <>
                   <div className="divide-y divide-ink-navy/6 max-h-72 overflow-y-auto">
                     {ordineAperto.righe.map(r => (
@@ -1044,9 +968,9 @@ export default function TavoliPage() {
                   <div className="px-5 py-4 border-t border-ink-navy/8">
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-base font-bold text-ink-navy">{fmt(ordineAperto.totale)}</span>
-                      <button onClick={() => apriContoModifica(ordineAperto)}
+                      <button onClick={() => setContoModificaOrdine(ordineAperto)}
                         className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-ink-navy/15 text-ink-navy/60 hover:bg-mist transition-colors">
-                        Modifica righe
+                        Modifica
                       </button>
                     </div>
                     <button onClick={() => { chiudiConto(ordineAperto); setContoModal(null) }}
@@ -1061,6 +985,18 @@ export default function TavoliPage() {
           </div>
         )
       })()}
+
+      {/* Modal modifica righe — sovrapposto al modal conto */}
+      {contoModificaOrdine && (
+        <ModificaOrdineModal
+          ordine={contoModificaOrdine}
+          onClose={() => setContoModificaOrdine(null)}
+          onOrdineUpdated={(righe, totale) => {
+            setOrdiniAperti(prev => prev.map(x => x.id === contoModificaOrdine.id ? { ...x, righe, totale } : x))
+            fetchOrdini()
+          }}
+        />
+      )}
 
       {/* Modal CREA */}
       {showCrea && (

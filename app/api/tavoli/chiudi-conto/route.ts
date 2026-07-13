@@ -17,11 +17,21 @@ export async function POST(req: Request) {
 
   await prisma.ordine.updateMany({ where, data: { status: 'chiuso' } })
 
-  // Segna come "confermato" gli appuntamenti attivi del tavolo (libera il tavolo in calendario)
+  // Marca come "confermato" SOLO l'appuntamento della serata corrente il cui orario è già passato.
+  // Filtro temporale: data >= inizio serata (04:00 UTC di oggi o ieri) e data <= adesso.
+  // Così non tocchiamo prenotazioni future dello stesso tavolo nella stessa sera,
+  // né prenotazioni di serate precedenti.
+  const now = new Date()
+  const serataInizio = new Date(now)
+  serataInizio.setUTCHours(4, 0, 0, 0)
+  if (now.getUTCHours() < 4) serataInizio.setUTCDate(serataInizio.getUTCDate() - 1)
+
   const statiAttivi = ['in_attesa', 'confermato', 'pronto']
+  const filtroData = { gte: serataInizio, lte: now }
+
   if (tavoloId) {
     await prisma.appuntamento.updateMany({
-      where: { userId: user.id, tavoloId, status: { in: statiAttivi } },
+      where: { userId: user.id, tavoloId, status: { in: statiAttivi }, data: filtroData },
       data: { status: 'confermato' },
     })
   }
@@ -33,7 +43,7 @@ export async function POST(req: Request) {
     if (gruppo) {
       const tavoloIds = gruppo.tavoli.map(t => t.id)
       await prisma.appuntamento.updateMany({
-        where: { userId: user.id, tavoloId: { in: tavoloIds }, status: { in: statiAttivi } },
+        where: { userId: user.id, tavoloId: { in: tavoloIds }, status: { in: statiAttivi }, data: filtroData },
         data: { status: 'confermato' },
       })
     }

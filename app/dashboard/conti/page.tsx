@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 interface RigaOrdine { id: string; nome: string; quantita: number; prezzo: number; note?: string | null }
 interface Ordine {
@@ -8,6 +8,8 @@ interface Ordine {
   totale: number; note: string | null; status: string; createdAt: string
   tipo: string; righe: RigaOrdine[]
 }
+interface Piatto { id: string; nome: string; prezzo: number; descrizione?: string | null }
+interface Categoria { id: string; nome: string; piatti: Piatto[] }
 
 const fmt = (n: number) => `€${n.toFixed(2)}`
 
@@ -16,32 +18,177 @@ function getSerataKey(createdAt: string): string {
   if (d.getUTCHours() < 4) d.setUTCDate(d.getUTCDate() - 1)
   return d.toISOString().slice(0, 10)
 }
-
-function todayKey(): string {
-  return getSerataKey(new Date().toISOString())
-}
-
-function prevDay(k: string): string {
-  const d = new Date(k + 'T12:00:00Z')
-  d.setUTCDate(d.getUTCDate() - 1)
-  return d.toISOString().slice(0, 10)
-}
-
-function nextDay(k: string): string {
-  const d = new Date(k + 'T12:00:00Z')
-  d.setUTCDate(d.getUTCDate() + 1)
-  return d.toISOString().slice(0, 10)
-}
-
-function fmtGiorno(key: string): string {
+function todayKey() { return getSerataKey(new Date().toISOString()) }
+function prevDay(k: string) { const d = new Date(k + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10) }
+function nextDay(k: string) { const d = new Date(k + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10) }
+function fmtGiorno(key: string) {
   const today = todayKey()
-  const yesterday = prevDay(today)
   if (key === today) return 'Oggi'
-  if (key === yesterday) return 'Ieri'
-  const d = new Date(key + 'T12:00:00Z')
-  return d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })
+  if (key === prevDay(today)) return 'Ieri'
+  return new Date(key + 'T12:00:00Z').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
+// ── Modal modifica ordine ───────────────────────────────────────────────────
+function ModificaModal({ ordine, onClose, onOrdineUpdated }: {
+  ordine: Ordine
+  onClose: () => void
+  onOrdineUpdated: (o: Ordine) => void
+}) {
+  const [righe, setRighe] = useState<RigaOrdine[]>([...ordine.righe])
+  const [totale, setTotale] = useState(ordine.totale)
+  const [salvando, setSalvando] = useState<string | null>(null) // id operazione in corso
+  const [categorie, setCategorie] = useState<Categoria[]>([])
+  const [search, setSearch] = useState('')
+  const [sezioneMenu, setSezioneMenu] = useState(false)
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    fetch('/api/menu/categorie', { credentials: 'include' })
+      .then(r => r.json()).then(d => setCategorie(d.categorie ?? [])).catch(() => {})
+  }, [])
+
+  async function callApi(method: string, body: object) {
+    const res = await fetch(`/api/ordini/${ordine.id}/riga`, {
+      method, credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (data.ordine) {
+      const nuoveRighe = data.ordine.righe ?? righe
+      setRighe(nuoveRighe)
+      setTotale(data.ordine.totale)
+      onOrdineUpdated({ ...ordine, righe: nuoveRighe, totale: data.ordine.totale })
+    }
+  }
+
+  async function rimuovi(rigaId: string) {
+    setSalvando(rigaId)
+    setRighe(prev => prev.filter(r => r.id !== rigaId))
+    await callApi('DELETE', { rigaId })
+    setSalvando(null)
+  }
+
+  async function cambiaQ(rigaId: string, delta: number) {
+    const riga = righe.find(r => r.id === rigaId)
+    if (!riga) return
+    if (riga.quantita + delta <= 0) { rimuovi(rigaId); return }
+    setSalvando(rigaId)
+    setRighe(prev => prev.map(r => r.id === rigaId ? { ...r, quantita: r.quantita + delta } : r))
+    await callApi('PATCH', { rigaId, quantita: riga.quantita + delta })
+    setSalvando(null)
+  }
+
+  async function aggiungi(p: Piatto) {
+    setSalvando('add-' + p.id)
+    await callApi('POST', { piattoId: p.id, nome: p.nome, prezzo: p.prezzo, quantita: 1 })
+    setSalvando(null)
+  }
+
+  const piattiFiltrati = search.trim()
+    ? categorie.flatMap(c => c.piatti.filter(p => p.nome.toLowerCase().includes(search.toLowerCase())))
+    : null
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-ink-navy/8 flex items-center justify-between shrink-0">
+          <div>
+            <h3 className="text-base font-bold text-ink-navy">Modifica — {ordine.tavolo}</h3>
+            <p className="text-xs text-ink-navy/40 mt-0.5">
+              {ordine.status === 'chiuso' ? 'Ordine chiuso' : 'Ordine aperto'} · modifiche salvate automaticamente
+            </p>
+          </div>
+          <button onClick={onClose} className="text-ink-navy/30 hover:text-ink-navy/60 text-xl font-bold leading-none">✕</button>
+        </div>
+
+        <div className="overflow-y-auto flex-1">
+          {/* Righe attuali */}
+          <div className="divide-y divide-ink-navy/6">
+            {righe.length === 0 && <p className="px-5 py-4 text-sm text-ink-navy/30 text-center">Ordine vuoto</p>}
+            {righe.map(r => (
+              <div key={r.id} className="flex items-center gap-2 px-5 py-3">
+                <span className="flex-1 text-sm text-ink-navy truncate">{r.nome}</span>
+                {r.note && <span className="text-xs text-ink-navy/35 shrink-0">({r.note})</span>}
+                <span className="text-sm text-ink-navy/50 shrink-0 w-14 text-right">{fmt(r.prezzo * r.quantita)}</span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => cambiaQ(r.id, -1)} disabled={!!salvando}
+                    className="w-6 h-6 rounded-full bg-ink-navy/8 hover:bg-ink-navy/15 text-ink-navy font-bold text-sm flex items-center justify-center disabled:opacity-40">−</button>
+                  <span className="w-5 text-center text-sm font-semibold text-ink-navy">{r.quantita}</span>
+                  <button onClick={() => cambiaQ(r.id, +1)} disabled={!!salvando}
+                    className="w-6 h-6 rounded-full bg-ink-navy/8 hover:bg-ink-navy/15 text-ink-navy font-bold text-sm flex items-center justify-center disabled:opacity-40">+</button>
+                </div>
+                <button onClick={() => rimuovi(r.id)} disabled={!!salvando}
+                  className="text-red-400 hover:text-red-600 text-base font-bold disabled:opacity-40 w-5 text-center">✕</button>
+              </div>
+            ))}
+          </div>
+
+          {/* Sezione aggiungi dal menu */}
+          <div className="border-t border-ink-navy/8">
+            <button onClick={() => { setSezioneMenu(v => !v); setTimeout(() => searchRef.current?.focus(), 100) }}
+              className="w-full flex items-center gap-2 px-5 py-3 text-left hover:bg-mist transition-colors">
+              <span className="text-sm font-semibold text-electric-blue">+ Aggiungi dal menu</span>
+              <span className={`ml-auto text-ink-navy/30 text-xs transition-transform ${sezioneMenu ? 'rotate-180' : ''}`}>▾</span>
+            </button>
+
+            {sezioneMenu && (
+              <div className="px-5 pb-4 space-y-3">
+                <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="Cerca piatto…"
+                  className="w-full border border-ink-navy/15 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-electric-blue" />
+
+                {piattiFiltrati ? (
+                  // Risultati ricerca flat
+                  <div className="flex flex-wrap gap-1.5">
+                    {piattiFiltrati.length === 0 && <p className="text-xs text-ink-navy/30">Nessun risultato</p>}
+                    {piattiFiltrati.map(p => (
+                      <button key={p.id} onClick={() => aggiungi(p)} disabled={salvando === 'add-' + p.id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-electric-blue/8 hover:bg-electric-blue/15 text-electric-blue text-xs font-semibold transition-colors disabled:opacity-50">
+                        {salvando === 'add-' + p.id ? '…' : p.nome}
+                        <span className="text-electric-blue/60">{fmt(p.prezzo)}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  // Menu per categorie
+                  <div className="space-y-3">
+                    {categorie.map(cat => cat.piatti.length > 0 && (
+                      <div key={cat.id}>
+                        <p className="text-[10px] font-semibold text-ink-navy/40 uppercase tracking-wider mb-1.5">{cat.nome}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {cat.piatti.map(p => (
+                            <button key={p.id} onClick={() => aggiungi(p)} disabled={salvando === 'add-' + p.id}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-electric-blue/8 hover:bg-electric-blue/15 text-electric-blue text-xs font-semibold transition-colors disabled:opacity-50">
+                              {salvando === 'add-' + p.id ? '…' : p.nome}
+                              <span className="text-electric-blue/60">{fmt(p.prezzo)}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-ink-navy/8 flex items-center justify-between shrink-0">
+          <span className="text-sm font-bold text-ink-navy">{fmt(totale)}</span>
+          <button onClick={onClose}
+            className="px-4 py-2 rounded-xl bg-electric-blue text-white text-sm font-semibold hover:bg-electric-blue/90 transition-colors">
+            Chiudi
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Pagina ──────────────────────────────────────────────────────────────────
 export default function ContiPage() {
   const [tutti, setTutti] = useState<Ordine[]>([])
   const [chiudendo, setChiudendo] = useState<string | null>(null)
@@ -50,16 +197,11 @@ export default function ContiPage() {
   const [tab, setTab] = useState<'tavoli' | 'ordini'>('tavoli')
   const [chiusiAperti, setChiusiAperti] = useState(false)
   const [dataFiltro, setDataFiltro] = useState(todayKey)
-
-  // modal modifica
   const [modificando, setModificando] = useState<Ordine | null>(null)
-  const [righeLocali, setRigheLocali] = useState<RigaOrdine[]>([])
-  const [salvando, setSalvando] = useState(false)
 
   const isOggi = dataFiltro === todayKey()
 
   const fetchOrdini = useCallback(async () => {
-    // Per oggi usa ?oggi=1, per i giorni passati prende 90gg e filtra client-side
     const url = isOggi ? '/api/ordini?oggi=1' : '/api/ordini?giorni=90'
     const res = await fetch(url, { credentials: 'include' })
     const data = await res.json().catch(() => ({}))
@@ -74,17 +216,19 @@ export default function ContiPage() {
     return () => clearInterval(iv)
   }, [fetchOrdini, isOggi])
 
-  // filtra per serata selezionata
   const ordini = isOggi ? tutti : tutti.filter(o => getSerataKey(o.createdAt) === dataFiltro)
-
   const tavoli = ordini.filter(o => o.tipo === 'tavolo' || o.tavoloId != null || o.gruppoId != null)
   const altriOrdini = ordini.filter(o => o.tipo !== 'tavolo' && o.tavoloId == null && o.gruppoId == null)
   const lista = tab === 'tavoli' ? tavoli : altriOrdini
-
   const aperti = lista.filter(o => o.status !== 'chiuso')
   const chiusi = lista.filter(o => o.status === 'chiuso')
   const totaleAperti = aperti.reduce((s, o) => s + o.totale, 0)
   const totaleChiusi = chiusi.reduce((s, o) => s + o.totale, 0)
+
+  function aggiorna(updated: Ordine) {
+    setTutti(prev => prev.map(x => x.id === updated.id ? updated : x))
+    if (modificando?.id === updated.id) setModificando(updated)
+  }
 
   async function chiudiConto(o: Ordine) {
     setChiudendo(o.id)
@@ -103,54 +247,8 @@ export default function ContiPage() {
 
   async function eliminaOrdine(o: Ordine) {
     setTutti(prev => prev.filter(x => x.id !== o.id))
+    setConfermaElimina(null)
     await fetch(`/api/ordini/${o.id}`, { method: 'DELETE', credentials: 'include' })
-    fetchOrdini()
-  }
-
-  function apriModifica(o: Ordine) {
-    setModificando(o)
-    setRigheLocali([...o.righe])
-  }
-
-  async function rimuoviRiga(rigaId: string) {
-    if (!modificando) return
-    const nuoveRighe = righeLocali.filter(r => r.id !== rigaId)
-    setRigheLocali(nuoveRighe)
-    setSalvando(true)
-    const res = await fetch(`/api/ordini/${modificando.id}/riga`, {
-      method: 'DELETE', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rigaId }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (data.ordine) {
-      setTutti(prev => prev.map(x => x.id === modificando.id ? { ...x, totale: data.ordine.totale, righe: nuoveRighe } : x))
-      setModificando(prev => prev ? { ...prev, totale: data.ordine.totale, righe: nuoveRighe } : null)
-    }
-    setSalvando(false)
-    fetchOrdini()
-  }
-
-  async function cambiaQuantita(rigaId: string, delta: number) {
-    if (!modificando) return
-    const riga = righeLocali.find(r => r.id === rigaId)
-    if (!riga) return
-    const nuova = riga.quantita + delta
-    if (nuova <= 0) { rimuoviRiga(rigaId); return }
-    const nuoveRighe = righeLocali.map(r => r.id === rigaId ? { ...r, quantita: nuova } : r)
-    setRigheLocali(nuoveRighe)
-    setSalvando(true)
-    const res = await fetch(`/api/ordini/${modificando.id}/riga`, {
-      method: 'PATCH', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rigaId, quantita: nuova }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (data.ordine) {
-      setTutti(prev => prev.map(x => x.id === modificando.id ? { ...x, totale: data.ordine.totale } : x))
-      setModificando(prev => prev ? { ...prev, totale: data.ordine.totale } : null)
-    }
-    setSalvando(false)
     fetchOrdini()
   }
 
@@ -166,8 +264,7 @@ export default function ContiPage() {
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <span className={`text-base font-bold ${aperto ? 'text-ink-navy' : 'text-ink-navy/40'}`}>{fmt(o.totale)}</span>
-            {/* Modifica disponibile sia per aperti che per chiusi */}
-            <button onClick={() => apriModifica(o)}
+            <button onClick={() => setModificando(o)}
               className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-ink-navy/15 text-ink-navy/60 hover:bg-mist transition-colors">
               Modifica
             </button>
@@ -181,7 +278,7 @@ export default function ContiPage() {
               confermaElimina === o.id ? (
                 <div className="flex items-center gap-1.5">
                   <button onClick={() => setConfermaElimina(null)} className="text-xs px-2 py-1 rounded-lg border border-ink-navy/15 text-ink-navy/50">No</button>
-                  <button onClick={() => { eliminaOrdine(o); setConfermaElimina(null) }} className="text-xs px-2 py-1 rounded-lg bg-red-500 text-white font-semibold">Sì</button>
+                  <button onClick={() => eliminaOrdine(o)} className="text-xs px-2 py-1 rounded-lg bg-red-500 text-white font-semibold">Sì</button>
                 </div>
               ) : (
                 <button onClick={() => setConfermaElimina(o.id)}
@@ -213,7 +310,6 @@ export default function ContiPage() {
 
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-ink-navy">Conti</h1>
@@ -242,7 +338,7 @@ export default function ContiPage() {
       <div className="flex gap-2">
         {([['tavoli', 'Tavoli'], ['ordini', 'Asporto & Delivery']] as const).map(([k, l]) => (
           <button key={k} onClick={() => { setTab(k); setChiusiAperti(false) }}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors relative ${tab === k ? 'bg-electric-blue text-white' : 'bg-white border border-ink-navy/15 text-ink-navy/60 hover:bg-mist'}`}>
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${tab === k ? 'bg-electric-blue text-white' : 'bg-white border border-ink-navy/15 text-ink-navy/60 hover:bg-mist'}`}>
             {l}
             {k === 'tavoli' && isOggi && tavoli.filter(o => o.status !== 'chiuso').length > 0 && (
               <span className="ml-1.5 bg-zest-lime text-ink-navy text-xs font-bold px-1.5 py-0.5 rounded-full">
@@ -265,9 +361,7 @@ export default function ContiPage() {
           </div>
           {aperti.length === 0 ? (
             <div className="bg-white border border-ink-navy/10 rounded-xl p-6 text-center text-ink-navy/30 text-sm">
-              {tab === 'tavoli'
-                ? 'Nessun conto aperto — i QR dei tavoli apriranno automaticamente un conto quando il cliente ordina'
-                : 'Nessun ordine in corso'}
+              {tab === 'tavoli' ? 'Nessun conto aperto — i QR apriranno un conto quando il cliente ordina' : 'Nessun ordine in corso'}
             </div>
           ) : (
             <div className="space-y-3">{aperti.map(o => <OrdineCard key={o.id} o={o} />)}</div>
@@ -275,7 +369,7 @@ export default function ContiPage() {
         </div>
       )}
 
-      {/* Chiusi — a scomparsa per oggi, lista diretta per passato */}
+      {/* Chiusi */}
       {chiusi.length > 0 && (
         <div>
           {isOggi ? (
@@ -299,61 +393,15 @@ export default function ContiPage() {
           )}
         </div>
       )}
-
-      {/* Giorni passati: mostra anche gli aperti */}
-      {!isOggi && aperti.length > 0 && (
-        <div className="space-y-3">{aperti.map(o => <OrdineCard key={o.id} o={o} />)}</div>
-      )}
-
+      {!isOggi && aperti.length > 0 && <div className="space-y-3">{aperti.map(o => <OrdineCard key={o.id} o={o} />)}</div>}
       {ordini.length === 0 && !loading && (
         <div className="bg-white border border-ink-navy/10 rounded-xl p-8 text-center text-ink-navy/30 text-sm">
           Nessun ordine per {fmtGiorno(dataFiltro).toLowerCase()}
         </div>
       )}
 
-      {/* Modal modifica righe */}
       {modificando && (
-        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-            <div className="px-5 py-4 border-b border-ink-navy/8 flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-ink-navy">Modifica — {modificando.tavolo}</h3>
-                <p className="text-xs text-ink-navy/40 mt-0.5">
-                  {modificando.status === 'chiuso' ? 'Ordine chiuso · nessun QR collegato' : 'Ordine aperto'}
-                </p>
-              </div>
-              <button onClick={() => setModificando(null)} className="text-ink-navy/30 hover:text-ink-navy/60 text-xl font-bold leading-none">✕</button>
-            </div>
-            <div className="divide-y divide-ink-navy/6 max-h-80 overflow-y-auto">
-              {righeLocali.length === 0 && <p className="px-5 py-4 text-sm text-ink-navy/30 text-center">Ordine vuoto</p>}
-              {righeLocali.map(r => (
-                <div key={r.id} className="flex items-center gap-3 px-5 py-3">
-                  <span className="flex-1 text-sm text-ink-navy truncate">{r.nome}</span>
-                  {r.note && <span className="text-xs text-ink-navy/35">({r.note})</span>}
-                  <span className="text-sm text-ink-navy/50 shrink-0">{fmt(r.prezzo * r.quantita)}</span>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => cambiaQuantita(r.id, -1)} disabled={salvando}
-                      className="w-6 h-6 rounded-full bg-ink-navy/8 hover:bg-ink-navy/15 text-ink-navy font-bold text-sm flex items-center justify-center disabled:opacity-40">−</button>
-                    <span className="w-5 text-center text-sm font-semibold text-ink-navy">{r.quantita}</span>
-                    <button onClick={() => cambiaQuantita(r.id, +1)} disabled={salvando}
-                      className="w-6 h-6 rounded-full bg-ink-navy/8 hover:bg-ink-navy/15 text-ink-navy font-bold text-sm flex items-center justify-center disabled:opacity-40">+</button>
-                  </div>
-                  <button onClick={() => rimuoviRiga(r.id)} disabled={salvando}
-                    className="text-red-400 hover:text-red-600 text-sm font-bold disabled:opacity-40 pl-1">✕</button>
-                </div>
-              ))}
-            </div>
-            <div className="px-5 py-4 border-t border-ink-navy/8 flex items-center justify-between">
-              <span className="text-sm font-bold text-ink-navy">
-                {fmt(righeLocali.reduce((s, r) => s + r.prezzo * r.quantita, 0))}
-              </span>
-              <button onClick={() => setModificando(null)}
-                className="px-4 py-2 rounded-xl bg-electric-blue text-white text-sm font-semibold hover:bg-electric-blue/90 transition-colors">
-                Chiudi
-              </button>
-            </div>
-          </div>
-        </div>
+        <ModificaModal ordine={modificando} onClose={() => setModificando(null)} onOrdineUpdated={aggiorna} />
       )}
     </div>
   )
