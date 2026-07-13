@@ -1192,7 +1192,10 @@ function Richieste() {
                     </div>
                   ) : (
                     <div className="flex gap-1.5 flex-wrap">
-                      {(['bozza', 'inviato', 'accettato', 'rifiutato'] as const).map(key => (
+                      {(selected.status === 'accettato'
+                        ? (['accettato', 'concluso_completato', 'concluso_cancellato'] as const)
+                        : (['bozza', 'inviato', 'accettato', 'rifiutato'] as const)
+                      ).map(key => (
                         <button key={key} onClick={() => handleStatusChange(selected.id, key)}
                           className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${selected.status === key ? STATUS_COLORS[key] : 'bg-mist text-ink-navy/50 hover:bg-ink-navy/8'}`}>
                           {STATUS_LABELS[key]}
