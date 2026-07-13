@@ -67,12 +67,12 @@ function scaricaPdf(
   const assenzaHtml = opzioni.includiRitardi && assenzaRows.length > 0 ? `
     <h2 style="font-size:15px;font-weight:700;margin:28px 0 10px;color:#dc2626">Assenze ingiustificate</h2>
     <table>
-      <thead><tr><th style="background:#dc2626">Data</th><th style="background:#dc2626">Turno previsto</th></tr></thead>
+      <thead><tr><th>Data</th><th>Turno previsto</th></tr></thead>
       <tbody>
         ${assenzaRows.map(r => `
-          <tr style="background:#fef2f2">
+          <tr>
             <td style="color:#dc2626;font-weight:600">${fmtData(r.data)}</td>
-            <td>${r.turni.map(t => t.inizio + '–' + t.fine).join(', ')}</td>
+            <td style="color:#dc2626">${r.turni.map(t => t.inizio + '–' + t.fine).join(', ')}</td>
           </tr>`).join('')}
       </tbody>
     </table>` : ''
@@ -839,6 +839,9 @@ export default function AnalyticsPage() {
                   </button>
                 ))}
               </div>
+              <span className="text-[11px] text-ink-navy/35">
+                <b className="text-ink-navy/50">Turni</b>: ore da programma &nbsp;·&nbsp; <b className="text-ink-navy/50">Cartellino</b>: ore effettive da timbro QR
+              </span>
               {mesiDisponibili.length > 0 && (
                 <select value={meseSel} onChange={e => cambiaMe(e.target.value)}
                   className="text-sm border border-ink-navy/10 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-electric-blue bg-white">
@@ -1074,7 +1077,7 @@ export default function AnalyticsPage() {
                               />
                             </div>
                             <span className="text-[10px] font-medium text-ink-navy/40 leading-none">{b.label}</span>
-                            {b.sublabel && <span className="text-[9px] text-ink-navy/25 leading-none">{b.sublabel}</span>}
+                            <span className="text-[9px] text-ink-navy/25 leading-none">{b.sublabel ?? ''}</span>
                           </div>
                         )
                       })}
@@ -1108,13 +1111,13 @@ export default function AnalyticsPage() {
                                 <span className="w-12 text-right text-ink-navy/40 flex-shrink-0 text-[10px]">{fmtData(r.data)}</span>
                                 <div className="flex-1 flex justify-end">
                                   <div className={`h-4 rounded-l flex items-center justify-end px-1 ${isRit ? 'bg-red-100' : 'bg-ink-navy/5'}`} style={{ width: `${Math.max(ritPct, 4)}%` }}>
-                                    {isRit && r.ritardoMin >= 15 && <span className="text-[9px] font-bold text-red-500">{minToLabel(r.ritardoMin)}</span>}
+                                    {isRit && <span className="text-[9px] font-bold text-red-500">{minToLabel(r.ritardoMin)}</span>}
                                   </div>
                                 </div>
                                 <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isRit ? 'bg-red-400' : isStr ? 'bg-electric-blue' : 'bg-green-400'}`} />
                                 <div className="flex-1 flex justify-start">
                                   <div className={`h-4 rounded-r flex items-center px-1 ${isStr ? 'bg-electric-blue/20' : 'bg-ink-navy/5'}`} style={{ width: `${Math.max(strPct, 4)}%` }}>
-                                    {isStr && r.straordinarioMin >= 15 && <span className="text-[9px] font-bold text-electric-blue">{minToLabel(r.straordinarioMin)}</span>}
+                                    {isStr && <span className="text-[9px] font-bold text-electric-blue">{minToLabel(r.straordinarioMin)}</span>}
                                   </div>
                                 </div>
                               </div>
@@ -1145,7 +1148,7 @@ export default function AnalyticsPage() {
 
                     {/* Assenze */}
                     <div className="bg-white rounded-2xl border border-ink-navy/10 shadow-sm p-5">
-                      <p className="text-sm font-semibold text-ink-navy">Assenze & Richieste</p>
+                      <p className="text-sm font-semibold text-ink-navy">Permessi & Richieste</p>
                       <p className="text-xs text-ink-navy/40 mt-0.5">Nel periodo selezionato</p>
 
                       {richiesteDettaglio.length === 0 ? (

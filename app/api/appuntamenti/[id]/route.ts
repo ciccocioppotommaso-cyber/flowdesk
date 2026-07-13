@@ -106,11 +106,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         const nuovoStatus = data.status === 'completato' ? 'concluso_completato'
           : data.status === 'cancellato' ? 'concluso_cancellato'
           : 'concluso_no_show'
+        // no_show manuale sovrascrive anche concluso_completato (messo dal cron automatico)
+        const statiProtetti = data.status === 'no_show'
+          ? ['concluso_no_show']
+          : ['concluso_completato', 'concluso_cancellato', 'concluso_no_show']
         await prisma.preventivo.updateMany({
           where: {
             userId: user.id,
             numero,
-            status: { notIn: ['concluso_completato', 'concluso_cancellato', 'concluso_no_show'] },
+            status: { notIn: statiProtetti },
           },
           data: { status: nuovoStatus },
         })

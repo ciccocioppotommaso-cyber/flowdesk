@@ -50,24 +50,42 @@ export async function POST(req: Request) {
     })
     if (gruppo) {
       let turnoIniziatoOGia = true
+      let turnoAncoraAttivo = true
       if (gruppo.turnoId) {
         try {
           const turni: { id: string; oraInizio: string; oraFine: string }[] = JSON.parse((user as any).turniServizio ?? '[]')
           const turno = turni.find(t => t.id === gruppo.turnoId)
           if (turno) {
-            const [h, m] = turno.oraInizio.split(':').map(Number)
-            const [hF, mF] = turno.oraFine.split(':').map(Number)
             const nowMin = localOggi.getHours() * 60 + localOggi.getMinutes()
-            const startMin = h * 60 + m
-            let endMin = hF * 60 + mF
+            const [hs, ms] = turno.oraInizio.split(':').map(Number)
+            const [hf, mf] = turno.oraFine.split(':').map(Number)
+            const startMin = hs * 60 + ms
+            let endMin = hf * 60 + mf
             if (endMin <= startMin) endMin += 24 * 60
-            turnoIniziatoOGia = nowMin >= startMin && nowMin < endMin
+            turnoIniziatoOGia = nowMin >= startMin
+            turnoAncoraAttivo = nowMin >= startMin && nowMin < endMin
           }
         } catch {}
       }
       if (turnoIniziatoOGia) {
-        gruppoId = gruppo.id
-        tavoloLabel = `T${gruppo.label}`
+        const ultimoOrdine = await prisma.ordine.findFirst({
+          where: { gruppoId: gruppo.id },
+          orderBy: { createdAt: 'desc' },
+          select: { status: true },
+        })
+        let legati = false
+        if (!ultimoOrdine) {
+          // Nessun conto mai aperto: legati solo finché il turno è in corso
+          legati = turnoAncoraAttivo
+        } else if (ultimoOrdine.status !== 'chiuso') {
+          // Conto aperto: sempre legati
+          legati = true
+        }
+        // else conto chiuso manualmente → slegati (legati = false)
+        if (legati) {
+          gruppoId = gruppo.id
+          tavoloLabel = `T${gruppo.label}`
+        }
       }
     }
   }
