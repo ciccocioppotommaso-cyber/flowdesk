@@ -5,7 +5,8 @@ import { IconTable, IconCheck, IconTrash, IconPencil, IconUnlink } from '../../c
 import { ModificaOrdineModal } from '../components/ModificaOrdineModal'
 
 // ── Tipi ─────────────────────────────────────────────────────────────────────
-interface Tavolo { id: string; numero: number; etichetta: string | null; posti: number; note: string | null; gruppoId: string | null }
+interface Tavolo { id: string; numero: number; etichetta: string | null; posti: number; note: string | null; gruppoId: string | null; salaId: string | null }
+interface Sala { id: string; nome: string; ordine: number; mapElementi?: string | null; _count?: { tavoli: number } }
 interface Gruppo { id: string; label: string; tavoli: { id: string; numero: number; etichetta: string | null }[] }
 interface RigaOrdine { id: string; nome: string; quantita: number; prezzo: number; note?: string | null }
 interface Ordine { id: string; tavolo: string; tavoloId: string | null; gruppoId: string | null; totale: number; note: string | null; status: string; createdAt: string; righe: RigaOrdine[] }
@@ -44,8 +45,8 @@ async function saveMD(id: string, d: MapData) {
     body: JSON.stringify({ mapX: d.x, mapY: d.y, mapW: d.w, mapH: d.h, mapForma: d.forma, mapColore: d.colore }),
   })
 }
-async function saveEl(el: Elemento[]) {
-  await fetch('/api/settings', {
+async function saveSalaElementi(salaId: string, el: Elemento[]) {
+  await fetch(`/api/sale/${salaId}`, {
     method: 'PATCH', credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mapElementi: JSON.stringify(el) }),
@@ -60,11 +61,10 @@ function QRCanvas({ url, id }: { url: string; id: string }) {
 }
 
 // ── Helpers serata ────────────────────────────────────────────────────────────
-// La serata inizia alle 04:00 UTC: ordini tra 00:00-03:59 UTC appartengono alla sera precedente
 function getSerataKey(createdAt: string): string {
   const d = new Date(createdAt)
   if (d.getUTCHours() < 4) d.setUTCDate(d.getUTCDate() - 1)
-  return d.toISOString().slice(0, 10) // YYYY-MM-DD UTC
+  return d.toISOString().slice(0, 10)
 }
 function fmtSerata(key: string): string {
   const d = new Date(key + 'T12:00:00Z')
@@ -137,7 +137,6 @@ function VistaConto({ ordiniAperti, ordiniChiusi, onChiudi, chiudendo, onRiapri,
     )
   }
 
-  // Raggruppa chiusi per serata (più recente prima)
   const chiusiPerSerata = ordiniChiusi.reduce<Record<string, Ordine[]>>((acc, o) => {
     const k = getSerataKey(o.createdAt)
     if (!acc[k]) acc[k] = []
@@ -148,7 +147,6 @@ function VistaConto({ ordiniAperti, ordiniChiusi, onChiudi, chiudendo, onRiapri,
 
   return (
     <div className="space-y-6">
-      {/* Conti aperti */}
       <div>
         <h2 className="text-sm font-semibold text-ink-navy/50 uppercase tracking-wider mb-3">
           Conti aperti {ordiniAperti.length > 0 && <span className="ml-1 bg-electric-blue text-white text-xs font-bold px-1.5 py-0.5 rounded-full">{ordiniAperti.length}</span>}
@@ -161,21 +159,13 @@ function VistaConto({ ordiniAperti, ordiniChiusi, onChiudi, chiudendo, onRiapri,
           <div className="space-y-3">{ordiniAperti.map(o => <OrdineCard key={o.id} o={o} aperto />)}</div>
         )}
       </div>
-
-      {/* Storico chiusi per serata */}
       {serateOrdinate.map(key => (
         <div key={key}>
           <div className="flex items-center gap-3 mb-3">
-            <h2 className="text-sm font-semibold text-ink-navy/50 uppercase tracking-wider capitalize">
-              {fmtSerata(key)}
-            </h2>
-            <span className="text-xs text-ink-navy/30">
-              {fmt(chiusiPerSerata[key].reduce((s, o) => s + o.totale, 0))} totale
-            </span>
+            <h2 className="text-sm font-semibold text-ink-navy/50 uppercase tracking-wider capitalize">{fmtSerata(key)}</h2>
+            <span className="text-xs text-ink-navy/30">{`€${chiusiPerSerata[key].reduce((s, o) => s + o.totale, 0).toFixed(2)}`} totale</span>
           </div>
-          <div className="space-y-3">
-            {chiusiPerSerata[key].map(o => <OrdineCard key={o.id} o={o} aperto={false} />)}
-          </div>
+          <div className="space-y-3">{chiusiPerSerata[key].map(o => <OrdineCard key={o.id} o={o} aperto={false} />)}</div>
         </div>
       ))}
     </div>
@@ -209,7 +199,6 @@ function VistaLista({ tavoli, gruppi, publicId, onModifica, onElimina, selectMod
   const gruppoByTavoloId = new Map<string, Gruppo>()
   gruppi.forEach(g => g.tavoli.forEach(t => gruppoByTavoloId.set(t.id, g)))
 
-  // Calcola fusioni per turno (stesso appuntamento con 2+ tavoli)
   const appConPiuTavoli = new Set<string>()
   if (tavoloAppMap) {
     const count = new Map<string, number>()
@@ -219,9 +208,7 @@ function VistaLista({ tavoli, gruppi, publicId, onModifica, onElimina, selectMod
 
   if (!tavoli.length) return (
     <div className="bg-white rounded-2xl border border-ink-navy/10 p-16 text-center shadow-sm">
-      <div className="w-12 h-12 rounded-xl bg-electric-blue/10 text-electric-blue flex items-center justify-center p-3 mx-auto mb-4">
-        <IconTable />
-      </div>
+      <div className="w-12 h-12 rounded-xl bg-electric-blue/10 text-electric-blue flex items-center justify-center p-3 mx-auto mb-4"><IconTable /></div>
       <p className="text-ink-navy/50 text-sm">Nessun tavolo ancora</p>
     </div>
   )
@@ -251,16 +238,8 @@ function VistaLista({ tavoli, gruppi, publicId, onModifica, onElimina, selectMod
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-semibold text-ink-navy">{label}</p>
-                    {isFusoPerTurno && labelFusoTurno && (
-                      <span className="text-xs bg-orange-100 text-orange-700 font-semibold px-2 py-0.5 rounded-full">
-                         {labelFusoTurno} (turno)
-                      </span>
-                    )}
-                    {gruppo && !isFusoPerTurno && (
-                      <span className="text-xs bg-orange-100 text-orange-700 font-semibold px-2 py-0.5 rounded-full">
-                         T{gruppo.label}
-                      </span>
-                    )}
+                    {isFusoPerTurno && labelFusoTurno && <span className="text-xs bg-orange-100 text-orange-700 font-semibold px-2 py-0.5 rounded-full">{labelFusoTurno} (turno)</span>}
+                    {gruppo && !isFusoPerTurno && <span className="text-xs bg-orange-100 text-orange-700 font-semibold px-2 py-0.5 rounded-full">T{gruppo.label}</span>}
                     {appsDelTavolo.map((a, i) => (
                       <span key={a.id} className="flex items-center gap-1">
                         <span className="text-xs bg-red-100 text-red-700 font-semibold px-2 py-0.5 rounded-full">
@@ -276,21 +255,13 @@ function VistaLista({ tavoli, gruppi, publicId, onModifica, onElimina, selectMod
                 </div>
                 <div className="flex gap-2 items-center flex-wrap">
                   {gruppo && !isFusoPerTurno && (
-                    <button onClick={() => onSciogliGruppo(gruppo.id)}
-                      className="text-xs px-3 py-1.5 rounded-lg border border-orange-200 text-orange-600 hover:bg-orange-50">
-                      Sciogli
-                    </button>
+                    <button onClick={() => onSciogliGruppo(gruppo.id)} className="text-xs px-3 py-1.5 rounded-lg border border-orange-200 text-orange-600 hover:bg-orange-50">Sciogli</button>
                   )}
                   {publicId && (
-                    <button onClick={() => setQrAperto(qrAperto === t.id ? null : t.id)}
-                      className="text-xs px-3 py-1.5 rounded-lg border border-ink-navy/10 text-ink-navy/60 hover:bg-mist">QR</button>
+                    <button onClick={() => setQrAperto(qrAperto === t.id ? null : t.id)} className="text-xs px-3 py-1.5 rounded-lg border border-ink-navy/10 text-ink-navy/60 hover:bg-mist">QR</button>
                   )}
-                  <button onClick={() => onModifica(t)}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-electric-blue/25 text-electric-blue hover:bg-electric-blue/10">Modifica</button>
-                  <button onClick={() => onElimina(t.id)}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50">
-                    Elimina
-                  </button>
+                  <button onClick={() => onModifica(t)} className="text-xs px-3 py-1.5 rounded-lg border border-electric-blue/25 text-electric-blue hover:bg-electric-blue/10">Modifica</button>
+                  <button onClick={() => onElimina(t.id)} className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50">Elimina</button>
                 </div>
               </div>
               {qrAperto === t.id && publicId && (
@@ -299,7 +270,7 @@ function VistaLista({ tavoli, gruppi, publicId, onModifica, onElimina, selectMod
                   <div className="space-y-2 pt-2">
                     <p className="text-xs text-ink-navy/50 break-all max-w-xs">{url}</p>
                     <button onClick={() => scarica(t.id, t.numero)} className="block text-xs px-3 py-1.5 rounded-lg bg-electric-blue text-white font-medium hover:bg-electric-blue/90">Scarica PNG</button>
-                    <button onClick={() => stampa(t.id, label)} className="block text-xs px-3 py-1.5 rounded-lg border border-ink-navy/15 text-ink-navy/70 hover:bg-mist"> Stampa</button>
+                    <button onClick={() => stampa(t.id, label)} className="block text-xs px-3 py-1.5 rounded-lg border border-ink-navy/15 text-ink-navy/70 hover:bg-mist">Stampa</button>
                   </div>
                 </div>
               )}
@@ -316,6 +287,9 @@ export interface VistaMappHandle { posizionaNuovoTavolo: (id: string, vis: Omit<
 
 const VistaMappa = forwardRef<VistaMappHandle, {
   tavoli: Tavolo[]; gruppi: Gruppo[]
+  salaAttiva: Sala | null
+  elementi: Elemento[]
+  onSaveElementi: (el: Elemento[]) => void
   onModifica: (t: Tavolo) => void; onElimina: (id: string) => void
   selectMode: boolean; selectedIds: string[]; onToggleSelect: (id: string) => void
   onSciogliGruppo: (gruppoId: string) => void
@@ -323,7 +297,7 @@ const VistaMappa = forwardRef<VistaMappHandle, {
   tavoloCarryMap?: Map<string, { carryIn: boolean; carryOut: boolean }>
   tavoloAppsMap?: Map<string, (AppuntamentoLight & { carryIn: boolean; carryOut: boolean })[]>
   onTavoloClick?: (tavoloId: string, gruppoId: string | null, label: string) => void
-}>(function VistaMappa({ tavoli, gruppi, onModifica, onElimina, selectMode, selectedIds, onToggleSelect, onSciogliGruppo, tavoloAppMap, tavoloCarryMap, tavoloAppsMap, onTavoloClick }, ref) {
+}>(function VistaMappa({ tavoli, gruppi, salaAttiva, elementi, onSaveElementi, onModifica, onElimina, selectMode, selectedIds, onToggleSelect, onSciogliGruppo, tavoloAppMap, tavoloCarryMap, tavoloAppsMap, onTavoloClick }, ref) {
   const [editMode, setEditMode] = useState(false)
   const [hoveredTavoloId, setHoveredTavoloId] = useState<string | null>(null)
   const [zoom, setZoom] = useState(() => {
@@ -334,35 +308,77 @@ const VistaMappa = forwardRef<VistaMappHandle, {
     try { return JSON.parse(localStorage.getItem('mappa-pan') ?? 'null') ?? { x: 0, y: 0 } } catch { return { x: 0, y: 0 } }
   })
   const panRef = useRef(pan)
+
+  // Vista salvata quando si chiude la modalità modifica (feature 3)
+  const [savedEditView, setSavedEditView] = useState<{ zoom: number; pan: { x: number; y: number } } | null>(() => {
+    try {
+      const z = parseFloat(localStorage.getItem('mappa-edit-zoom') ?? '')
+      const p = JSON.parse(localStorage.getItem('mappa-edit-pan') ?? 'null')
+      if (!isNaN(z) && p) return { zoom: z, pan: p }
+    } catch {}
+    return null
+  })
+
   const [mapData, setMapData] = useState<Record<string, MapData>>({})
   const mdRef = useRef<Record<string, MapData>>({})
-  const [elementi, setElementi] = useState<Elemento[]>([])
-  const elRef = useRef<Elemento[]>([])
   const resizeTRef = useRef<{ id: string; edge: 'r' | 'b' | 'rb'; sx: number; sy: number; ow: number; oh: number } | null>(null)
   const resizeERef = useRef<{ id: string; sx: number; sy: number; ow: number; oh: number } | null>(null)
 
   useEffect(() => {
     const d: Record<string, MapData> = { ...mdRef.current }
-    tavoli.forEach((t, i) => {
-      if (!d[t.id]) d[t.id] = tavoloToMD(t as any, i) // inizializza solo se nuovo
-    })
-    // rimuovi tavoli eliminati
+    tavoli.forEach((t, i) => { if (!d[t.id]) d[t.id] = tavoloToMD(t as any, i) })
     Object.keys(d).forEach(k => { if (!tavoli.find(t => t.id === k)) delete d[k] })
     setMapData(d); mdRef.current = d
   }, [tavoli])
 
-  useEffect(() => {
-    fetch('/api/settings', { credentials: 'include' }).then(r => r.json()).then(d => {
-      try { const el = JSON.parse(d.mapElementi ?? '[]'); setElementi(el); elRef.current = el } catch {}
-    }).catch(() => {})
-  }, [])
-
   function setZoomSync(nz: number) { zoomRef.current = nz; setZoom(nz); try { localStorage.setItem('mappa-zoom', String(nz)) } catch {} }
+
+  function setPanSync(np: { x: number; y: number }) { panRef.current = np; setPan(np); try { localStorage.setItem('mappa-pan', JSON.stringify(np)) } catch {} }
 
   function centroVisibile() {
     const cx = (340 - panRef.current.x) / zoomRef.current
     const cy = (340 - panRef.current.y) / zoomRef.current
     return { cx: Math.max(40, Math.min(CANVAS_W - 200, cx)), cy: Math.max(40, Math.min(CANVAS_H - 120, cy)) }
+  }
+
+  function toggleEditMode() {
+    if (editMode) {
+      // Uscita da modifica: salva la vista corrente come punto di ripristino
+      const view = { zoom: zoomRef.current, pan: { ...panRef.current } }
+      setSavedEditView(view)
+      try { localStorage.setItem('mappa-edit-zoom', String(view.zoom)); localStorage.setItem('mappa-edit-pan', JSON.stringify(view.pan)) } catch {}
+    }
+    setEditMode(v => !v)
+  }
+
+  function handleReset() {
+    if (!editMode && savedEditView) {
+      // Fuori modifica: torna alla vista di quando si è chiuso modifica
+      setZoomSync(savedEditView.zoom)
+      setPanSync(savedEditView.pan)
+    } else {
+      setZoomSync(1)
+      setPanSync({ x: 0, y: 0 })
+    }
+  }
+
+  function ripulisciMappa() {
+    // Rimuove tutti gli elementi decorativi
+    onSaveElementi([])
+    // Resetta le posizioni di tutti i tavoli alla griglia di default
+    const d: Record<string, MapData> = {}
+    tavoli.forEach((t, i) => {
+      const defaultMd: MapData = {
+        forma: (t as any).mapForma ?? DEFAULT_VISUAL.forma,
+        colore: (t as any).mapColore ?? DEFAULT_VISUAL.colore,
+        w: DEFAULT_VISUAL.w, h: DEFAULT_VISUAL.h,
+        x: 60 + (i % 5) * 190,
+        y: 60 + Math.floor(i / 5) * 190,
+      }
+      d[t.id] = defaultMd
+      saveMD(t.id, defaultMd)
+    })
+    mdRef.current = d; setMapData({ ...d })
   }
 
   useImperativeHandle(ref, () => ({
@@ -379,7 +395,7 @@ const VistaMappa = forwardRef<VistaMappHandle, {
     if ((e.target as HTMLElement).dataset.drag) return
     e.preventDefault()
     const sx = e.clientX, sy = e.clientY, ox = panRef.current.x, oy = panRef.current.y
-    function mv(ev: MouseEvent) { const np = { x: ox + (ev.clientX - sx), y: oy + (ev.clientY - sy) }; panRef.current = np; setPan({ ...np }); try { localStorage.setItem('mappa-pan', JSON.stringify(np)) } catch {} }
+    function mv(ev: MouseEvent) { setPanSync({ x: ox + (ev.clientX - sx), y: oy + (ev.clientY - sy) }) }
     function up() { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up) }
     window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up)
   }
@@ -419,43 +435,48 @@ const VistaMappa = forwardRef<VistaMappHandle, {
 
   function startDragEl(e: React.MouseEvent, id: string) {
     e.preventDefault(); e.stopPropagation()
-    const el = elRef.current.find(x => x.id === id)!; const ox = el.x, oy = el.y, sx = e.clientX, sy = e.clientY
+    const el = elementi.find(x => x.id === id)!; const ox = el.x, oy = el.y, sx = e.clientX, sy = e.clientY
+    let current = elementi
     function mv(ev: MouseEvent) {
       const dx = (ev.clientX - sx) / zoomRef.current, dy = (ev.clientY - sy) / zoomRef.current
-      const upd = elRef.current.map(x => x.id === id ? { ...x, x: Math.max(0, ox + dx), y: Math.max(0, oy + dy) } : x)
-      elRef.current = upd; setElementi([...upd])
+      current = current.map(x => x.id === id ? { ...x, x: Math.max(0, ox + dx), y: Math.max(0, oy + dy) } : x)
+      onSaveElementi(current)
     }
-    function up() { saveEl(elRef.current); window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up) }
+    function up() { if (salaAttiva) saveSalaElementi(salaAttiva.id, current); window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up) }
     window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up)
   }
 
   function startResizeEl(e: React.MouseEvent, id: string) {
     e.preventDefault(); e.stopPropagation()
-    const el = elRef.current.find(x => x.id === id)!; const ow = el.w, oh = el.h, sx = e.clientX, sy = e.clientY
+    const el = elementi.find(x => x.id === id)!; const ow = el.w, oh = el.h, sx = e.clientX, sy = e.clientY
     resizeERef.current = { id, sx, sy, ow, oh }
+    let current = elementi
     function mv(ev: MouseEvent) {
       if (!resizeERef.current) return
       const dx = (ev.clientX - resizeERef.current.sx) / zoomRef.current, dy = (ev.clientY - resizeERef.current.sy) / zoomRef.current
       const nw = Math.max(30, Math.round((resizeERef.current.ow + dx) / 10) * 10)
       const nh = Math.max(16, Math.round((resizeERef.current.oh + dy) / 10) * 10)
-      const upd = elRef.current.map(x => x.id === id ? { ...x, w: nw, h: nh } : x)
-      elRef.current = upd; setElementi([...upd])
+      current = current.map(x => x.id === id ? { ...x, w: nw, h: nh } : x)
+      onSaveElementi(current)
     }
-    function up() { saveEl(elRef.current); resizeERef.current = null; window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up) }
+    function up() { if (salaAttiva) saveSalaElementi(salaAttiva.id, current); resizeERef.current = null; window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up) }
     window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up)
   }
 
   function aggiungiElemento(t: typeof TIPI_ELEMENTO[0]) {
     const { cx, cy } = centroVisibile()
     const el: Elemento = { id: Date.now().toString(), ...t, x: cx - t.w / 2, y: cy - t.h / 2 }
-    const upd = [...elRef.current, el]; elRef.current = upd; setElementi(upd); saveEl(upd)
+    const upd = [...elementi, el]
+    onSaveElementi(upd)
+    if (salaAttiva) saveSalaElementi(salaAttiva.id, upd)
   }
   function rimuoviElemento(id: string) {
-    const upd = elRef.current.filter(x => x.id !== id); elRef.current = upd; setElementi(upd); saveEl(upd)
+    const upd = elementi.filter(x => x.id !== id)
+    onSaveElementi(upd)
+    if (salaAttiva) saveSalaElementi(salaAttiva.id, upd)
   }
 
   const hS = (cursor: string, extra: React.CSSProperties): React.CSSProperties => ({ position: 'absolute', backgroundColor: 'transparent', cursor, zIndex: 20, ...extra })
-
   const gruppoByTavoloId = new Map<string, Gruppo>()
   gruppi.forEach(g => g.tavoli.forEach(t => gruppoByTavoloId.set(t.id, g)))
 
@@ -467,20 +488,26 @@ const VistaMappa = forwardRef<VistaMappHandle, {
           <button onClick={() => setZoomSync(Math.max(0.2, +(zoomRef.current - 0.1).toFixed(1)))} className="w-7 h-7 flex items-center justify-center text-ink-navy/60 hover:bg-mist rounded-lg font-bold text-lg">−</button>
           <span className="text-xs font-semibold text-ink-navy/60 w-10 text-center">{Math.round(zoom * 100)}%</span>
           <button onClick={() => setZoomSync(Math.min(3, +(zoomRef.current + 0.1).toFixed(1)))} className="w-7 h-7 flex items-center justify-center text-ink-navy/60 hover:bg-mist rounded-lg font-bold text-lg">+</button>
-          <button onClick={() => { setZoomSync(1); setPan({ x: 0, y: 0 }); panRef.current = { x: 0, y: 0 } }} className="ml-1 text-xs text-electric-blue hover:text-ink-navy font-medium px-1">Reset</button>
+          <button onClick={handleReset} className="ml-1 text-xs text-electric-blue hover:text-ink-navy font-medium px-1">Reset</button>
         </div>
-        <button onClick={() => setEditMode(v => !v)}
+        <button onClick={toggleEditMode}
           className={`flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl border transition-colors ${editMode ? 'bg-electric-blue text-white border-electric-blue' : 'bg-white text-ink-navy/60 border-ink-navy/15 hover:bg-mist'}`}>
-           {editMode ? 'Modifica attiva' : 'Modifica'}
+          {editMode ? 'Modifica attiva' : 'Modifica'}
         </button>
         {editMode && (
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-xs text-ink-navy/35">Aggiungi:</span>
-            {TIPI_ELEMENTO.map(t => (
-              <button key={t.tipo} onClick={() => aggiungiElemento(t)}
-                className="text-xs px-2.5 py-1 rounded-lg border border-ink-navy/10 bg-white hover:bg-mist text-ink-navy/70 font-medium shadow-sm">{t.label}</button>
-            ))}
-          </div>
+          <>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs text-ink-navy/35">Aggiungi:</span>
+              {TIPI_ELEMENTO.map(t => (
+                <button key={t.tipo} onClick={() => aggiungiElemento(t)}
+                  className="text-xs px-2.5 py-1 rounded-lg border border-ink-navy/10 bg-white hover:bg-mist text-ink-navy/70 font-medium shadow-sm">{t.label}</button>
+              ))}
+            </div>
+            <button onClick={ripulisciMappa}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border border-red-200 text-red-500 bg-white hover:bg-red-50 transition-colors">
+              🗑 Ripulisci mappa
+            </button>
+          </>
         )}
         <p className="text-xs text-ink-navy/35 ml-auto hidden lg:block">
           {selectMode ? 'Clicca i tavoli per selezionarli' : editMode ? 'Trascina tavoli per spostarli' : 'Solo visualizzazione — clicca Modifica per editare'}
@@ -490,8 +517,7 @@ const VistaMappa = forwardRef<VistaMappHandle, {
       {/* Canvas */}
       <div className="rounded-2xl border border-ink-navy/10 shadow-sm overflow-hidden"
         style={{ width: '100%', height: 680, backgroundColor: '#ffffff', cursor: selectMode ? 'default' : 'grab', position: 'relative', backgroundImage: 'radial-gradient(circle,#e5e7eb 1.5px,transparent 1.5px)', backgroundSize: '30px 30px' }}
-        onMouseDown={selectMode ? undefined : startPan}
-        title={!editMode ? 'Modalità visualizzazione — clicca Modifica per spostare i tavoli' : undefined}>
+        onMouseDown={selectMode ? undefined : startPan}>
         <div style={{ position: 'absolute', top: 0, left: 0, transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`, transformOrigin: '0 0', width: CANVAS_W, height: CANVAS_H, backgroundColor: '#ffffff', backgroundImage: 'radial-gradient(circle,#e5e7eb 1.5px,transparent 1.5px)', backgroundSize: '30px 30px' }}>
 
           {/* Elementi decorativi */}
@@ -512,7 +538,6 @@ const VistaMappa = forwardRef<VistaMappHandle, {
 
           {/* Tavoli */}
           {(() => {
-            // Calcola quali tavoli sono fusi per questo turno (stesso appuntamento, 2+ tavoli)
             const appConPiuTavoli = new Set<string>()
             if (tavoloAppMap) {
               const countPerApp = new Map<string, number>()
@@ -520,81 +545,68 @@ const VistaMappa = forwardRef<VistaMappHandle, {
               countPerApp.forEach((count, appId) => { if (count >= 2) appConPiuTavoli.add(appId) })
             }
             return tavoli.map(t => {
-            const d = mapData[t.id]; if (!d) return null
-            const { w, h, colore, forma, x, y } = d; const isC = forma === 'cerchio'
-            const gruppo = gruppoByTavoloId.get(t.id)
-            const appsDelTavolo = tavoloAppsMap?.get(t.id) ?? []
-            const appAssegnato = appsDelTavolo[0] ?? tavoloAppMap?.get(t.id)
-            const carry = tavoloCarryMap?.get(t.id)
-            const isFusoPerTurno = appAssegnato ? appConPiuTavoli.has(appAssegnato.id) : false
-            // Label: se fuso per turno mostra "T2+3", altrimenti gruppo permanente o etichetta
-            const labelFuso = isFusoPerTurno && tavoloAppMap
-              ? `T${Array.from(tavoloAppMap.entries()).filter(([,a]) => a.id === appAssegnato!.id).map(([tid]) => tavoli.find(tv=>tv.id===tid)?.numero).filter(Boolean).sort((a,b)=>(a as number)-(b as number)).join('+')}`
-              : null
-            const label = labelFuso ?? (gruppo ? `T${gruppo.label}` : (t.etichetta ?? `T${t.numero}`))
-            const isSelected = selectedIds.includes(t.id)
-            const isOccupato = !!appAssegnato
-            return (
-              <div key={t.id} style={{ position: 'absolute', left: x, top: y, width: w, height: h, userSelect: 'none', overflow: 'visible' }}
-                onMouseEnter={() => setHoveredTavoloId(t.id)} onMouseLeave={() => setHoveredTavoloId(null)}>
-                {/* Badge prenotazione/i */}
-                {appsDelTavolo.length > 0 && (
-                  <div style={{ position: 'absolute', top: -30, left: '50%', transform: 'translateX(-50%)', zIndex: 30, whiteSpace: 'nowrap', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                    {appsDelTavolo.map((a, i) => (
-                      <div key={a.id} style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
-                        {a.carryIn && <div style={{ backgroundColor: '#3b82f6', color: '#fff', fontSize: 9, fontWeight: 700, borderRadius: 6, padding: '1px 4px' }}>←</div>}
-                        <div style={{ backgroundColor: i === 0 ? '#ef4444' : '#f97316', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 8, padding: '2px 7px', boxShadow: '0 2px 6px rgba(0,0,0,0.2)' }}>
-                          {a.clienteNome?.split(' ')[0] ?? 'Prenotato'}{a.coperti ? ` · ${a.coperti}` : ''}
+              const d = mapData[t.id]; if (!d) return null
+              const { w, h, colore, forma, x, y } = d; const isC = forma === 'cerchio'
+              const gruppo = gruppoByTavoloId.get(t.id)
+              const appsDelTavolo = tavoloAppsMap?.get(t.id) ?? []
+              const appAssegnato = appsDelTavolo[0] ?? tavoloAppMap?.get(t.id)
+              const carry = tavoloCarryMap?.get(t.id)
+              const isFusoPerTurno = appAssegnato ? appConPiuTavoli.has(appAssegnato.id) : false
+              const labelFuso = isFusoPerTurno && tavoloAppMap
+                ? `T${Array.from(tavoloAppMap.entries()).filter(([,a]) => a.id === appAssegnato!.id).map(([tid]) => tavoli.find(tv=>tv.id===tid)?.numero).filter(Boolean).sort((a,b)=>(a as number)-(b as number)).join('+')}`
+                : null
+              const label = labelFuso ?? (gruppo ? `T${gruppo.label}` : (t.etichetta ?? `T${t.numero}`))
+              const isSelected = selectedIds.includes(t.id)
+              const isOccupato = !!appAssegnato
+              return (
+                <div key={t.id} style={{ position: 'absolute', left: x, top: y, width: w, height: h, userSelect: 'none', overflow: 'visible' }}
+                  onMouseEnter={() => setHoveredTavoloId(t.id)} onMouseLeave={() => setHoveredTavoloId(null)}>
+                  {appsDelTavolo.length > 0 && (
+                    <div style={{ position: 'absolute', top: -30, left: '50%', transform: 'translateX(-50%)', zIndex: 30, whiteSpace: 'nowrap', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                      {appsDelTavolo.map((a, i) => (
+                        <div key={a.id} style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+                          {a.carryIn && <div style={{ backgroundColor: '#3b82f6', color: '#fff', fontSize: 9, fontWeight: 700, borderRadius: 6, padding: '1px 4px' }}>←</div>}
+                          <div style={{ backgroundColor: i === 0 ? '#ef4444' : '#f97316', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 8, padding: '2px 7px', boxShadow: '0 2px 6px rgba(0,0,0,0.2)' }}>
+                            {a.clienteNome?.split(' ')[0] ?? 'Prenotato'}{a.coperti ? ` · ${a.coperti}` : ''}
+                          </div>
+                          {a.carryOut && <div style={{ backgroundColor: '#f59e0b', color: '#fff', fontSize: 9, fontWeight: 700, borderRadius: 6, padding: '1px 4px' }}>→</div>}
                         </div>
-                        {a.carryOut && <div style={{ backgroundColor: '#f59e0b', color: '#fff', fontSize: 9, fontWeight: 700, borderRadius: 6, padding: '1px 4px' }}>→</div>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {/* Bordo selezione */}
-                {isSelected && (
-                  <div style={{ position: 'absolute', inset: -5, borderRadius: isC ? '50%' : 14, border: '3px solid #6366f1', pointerEvents: 'none', zIndex: 5 }} />
-                )}
-                {/* Bordo occupato/libero + fuso per turno */}
-                {tavoloAppMap && !isSelected && (
-                  <>
+                      ))}
+                    </div>
+                  )}
+                  {isSelected && <div style={{ position: 'absolute', inset: -5, borderRadius: isC ? '50%' : 14, border: '3px solid #6366f1', pointerEvents: 'none', zIndex: 5 }} />}
+                  {tavoloAppMap && !isSelected && (
                     <div style={{ position: 'absolute', inset: -4, borderRadius: isC ? '50%' : 13, border: `2.5px ${isFusoPerTurno ? 'dashed #f97316' : `solid ${isOccupato ? '#ef4444' : '#22c55e'}`}`, pointerEvents: 'none', zIndex: 4, opacity: 0.85 }} />
-                  </>
-                )}
-                {/* Bordo gruppo manuale (visibile anche con turno attivo, escluso se già auto-fuso) */}
-                {gruppo && !isSelected && !isFusoPerTurno && (
-                  <div style={{ position: 'absolute', inset: -4, borderRadius: isC ? '50%' : 13, border: '2.5px dashed #f97316', pointerEvents: 'none', zIndex: 4 }} />
-                )}
-                <div data-drag={editMode && !selectMode ? "1" : undefined}
-                  onMouseDown={editMode && !selectMode ? e => startDragT(e, t.id) : selectMode ? e => { e.stopPropagation(); onToggleSelect(t.id) } : undefined}
-                  onClick={!editMode && !selectMode ? () => onTavoloClick?.(t.id, gruppo?.id ?? null, label) : undefined}
-                  style={{ width: w, height: h, backgroundColor: colore, borderRadius: isC ? '50%' : 10, cursor: selectMode ? 'pointer' : editMode ? 'grab' : 'pointer', position: 'absolute', top: 0, left: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: isSelected ? `0 0 0 3px #6366f1, 0 3px 12px rgba(0,0,0,0.15)` : '0 3px 12px rgba(0,0,0,0.15)', opacity: selectMode && !isSelected ? 0.75 : 1 }}>
-                  <span style={{ color: '#fff', fontWeight: 700, fontSize: Math.min(w, h) < 80 ? 10 : 13, textAlign: 'center', padding: '0 6px', lineHeight: 1.3, pointerEvents: 'none' }}>{label}</span>
-                  <span style={{ color: '#fff', fontSize: Math.min(w, h) < 80 ? 10 : 12, fontWeight: 600, marginTop: 3, pointerEvents: 'none', backgroundColor: 'rgba(0,0,0,0.18)', borderRadius: 20, padding: '1px 7px' }}>{t.posti}</span>
-                </div>
-
-                {/* Azioni hover — sciogli gruppo sempre visibile, il resto solo in editMode */}
-                {!selectMode && hoveredTavoloId === t.id && (
-                  <div style={{ position: 'absolute', top: -30, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 4, zIndex: 30, paddingBottom: 4 }}>
-                    {gruppo && (
-                      <button data-drag="1" onMouseDown={e => e.stopPropagation()} onClick={() => onSciogliGruppo(gruppo.id)}
-                        className="w-6 h-6 p-1.5 bg-white border border-orange-300 rounded-full text-orange-500 flex items-center justify-center hover:bg-orange-50 shadow" title="Sciogli gruppo"><IconUnlink /></button>
-                    )}
-                    {editMode && <button data-drag="1" onMouseDown={e => e.stopPropagation()} onClick={() => onModifica(t)} className="w-6 h-6 p-1.5 bg-white border border-ink-navy/15 rounded-full text-ink-navy/50 flex items-center justify-center hover:bg-electric-blue/10 shadow"><IconPencil /></button>}
-                    {editMode && <button data-drag="1" onMouseDown={e => e.stopPropagation()} onClick={() => onElimina(t.id)} className="w-6 h-6 p-1.5 bg-white border border-red-200 rounded-full flex items-center justify-center hover:bg-red-50 shadow text-red-500"><IconTrash /></button>}
+                  )}
+                  {gruppo && !isSelected && !isFusoPerTurno && (
+                    <div style={{ position: 'absolute', inset: -4, borderRadius: isC ? '50%' : 13, border: '2.5px dashed #f97316', pointerEvents: 'none', zIndex: 4 }} />
+                  )}
+                  <div data-drag={editMode && !selectMode ? "1" : undefined}
+                    onMouseDown={editMode && !selectMode ? e => startDragT(e, t.id) : selectMode ? e => { e.stopPropagation(); onToggleSelect(t.id) } : undefined}
+                    onClick={!editMode && !selectMode ? () => onTavoloClick?.(t.id, gruppo?.id ?? null, label) : undefined}
+                    style={{ width: w, height: h, backgroundColor: colore, borderRadius: isC ? '50%' : 10, cursor: selectMode ? 'pointer' : editMode ? 'grab' : 'pointer', position: 'absolute', top: 0, left: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: isSelected ? `0 0 0 3px #6366f1, 0 3px 12px rgba(0,0,0,0.15)` : '0 3px 12px rgba(0,0,0,0.15)', opacity: selectMode && !isSelected ? 0.75 : 1 }}>
+                    <span style={{ color: '#fff', fontWeight: 700, fontSize: Math.min(w, h) < 80 ? 10 : 13, textAlign: 'center', padding: '0 6px', lineHeight: 1.3, pointerEvents: 'none' }}>{label}</span>
+                    <span style={{ color: '#fff', fontSize: Math.min(w, h) < 80 ? 10 : 12, fontWeight: 600, marginTop: 3, pointerEvents: 'none', backgroundColor: 'rgba(0,0,0,0.18)', borderRadius: 20, padding: '1px 7px' }}>{t.posti}</span>
                   </div>
-                )}
-
-                {/* Resize handles — solo in editMode fuori selectMode */}
-                {editMode && !selectMode && !isC && <div data-drag="1" onMouseDown={e => startResizeT(e, t.id, 'r')} style={hS('ew-resize', { right: -5, top: 8, bottom: 8, width: 10 })} />}
-                {editMode && !selectMode && !isC && <div data-drag="1" onMouseDown={e => startResizeT(e, t.id, 'b')} style={hS('ns-resize', { bottom: -5, left: 8, right: 8, height: 10 })} />}
-                {editMode && !selectMode && (
-                  <div data-drag="1" onMouseDown={e => startResizeT(e, t.id, 'rb')}
-                    style={{ position: 'absolute', right: isC ? 2 : -6, bottom: isC ? 2 : -6, width: 14, height: 14, backgroundColor: '#fff', border: `2.5px solid ${colore}`, borderRadius: isC ? '50%' : 4, cursor: 'se-resize', zIndex: 25 }} />
-                )}
-              </div>
-            )
-          })
+                  {!selectMode && hoveredTavoloId === t.id && (
+                    <div style={{ position: 'absolute', top: -30, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 4, zIndex: 30, paddingBottom: 4 }}>
+                      {gruppo && (
+                        <button data-drag="1" onMouseDown={e => e.stopPropagation()} onClick={() => onSciogliGruppo(gruppo.id)}
+                          className="w-6 h-6 p-1.5 bg-white border border-orange-300 rounded-full text-orange-500 flex items-center justify-center hover:bg-orange-50 shadow" title="Sciogli gruppo"><IconUnlink /></button>
+                      )}
+                      {editMode && <button data-drag="1" onMouseDown={e => e.stopPropagation()} onClick={() => onModifica(t)} className="w-6 h-6 p-1.5 bg-white border border-ink-navy/15 rounded-full text-ink-navy/50 flex items-center justify-center hover:bg-electric-blue/10 shadow"><IconPencil /></button>}
+                      {editMode && <button data-drag="1" onMouseDown={e => e.stopPropagation()} onClick={() => onElimina(t.id)} className="w-6 h-6 p-1.5 bg-white border border-red-200 rounded-full flex items-center justify-center hover:bg-red-50 shadow text-red-500"><IconTrash /></button>}
+                    </div>
+                  )}
+                  {editMode && !selectMode && !isC && <div data-drag="1" onMouseDown={e => startResizeT(e, t.id, 'r')} style={hS('ew-resize', { right: -5, top: 8, bottom: 8, width: 10 })} />}
+                  {editMode && !selectMode && !isC && <div data-drag="1" onMouseDown={e => startResizeT(e, t.id, 'b')} style={hS('ns-resize', { bottom: -5, left: 8, right: 8, height: 10 })} />}
+                  {editMode && !selectMode && (
+                    <div data-drag="1" onMouseDown={e => startResizeT(e, t.id, 'rb')}
+                      style={{ position: 'absolute', right: isC ? 2 : -6, bottom: isC ? 2 : -6, width: 14, height: 14, backgroundColor: '#fff', border: `2.5px solid ${colore}`, borderRadius: isC ? '50%' : 4, cursor: 'se-resize', zIndex: 25 }} />
+                  )}
+                </div>
+              )
+            })
           })()}
         </div>
       </div>
@@ -615,6 +627,9 @@ export default function TavoliPage() {
   const [chiudendo, setChiudendo] = useState<string | null>(null)
   const [tavoli, setTavoli] = useState<Tavolo[]>([])
   const [gruppi, setGruppi] = useState<Gruppo[]>([])
+  const [sale, setSale] = useState<Sala[]>([])
+  const [salaAttivaId, setSalaAttivaId] = useState<string | null>(null)
+  const [elementiSala, setElementiSala] = useState<Elemento[]>([])
   const [loading, setLoading] = useState(true)
   const [publicId, setPublicId] = useState<string | null>(null)
 
@@ -639,18 +654,43 @@ export default function TavoliPage() {
   const [visual, setVisual] = useState<Omit<MapData, 'x' | 'y'>>(DEFAULT_VISUAL)
   const [savingCrea, setSavingCrea] = useState(false)
 
+  // Modal sale
+  const [showSale, setShowSale] = useState(false)
+  const [nuovaSaleNome, setNuovaSaleNome] = useState('')
+  const [salvandoSala, setSalvandoSala] = useState(false)
+
   // Turni + vista per giorno
   const [turniServizio, setTurniServizio] = useState<TurnoServizio[]>([])
   const [appuntamenti, setAppuntamenti] = useState<AppuntamentoLight[]>([])
-  const [giornoSel, setGiornoSel] = useState<string>(() => (() => { const _d = new Date(); return `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}` })())
+  const [giornoSel, setGiornoSel] = useState<string>(() => { const _d = new Date(); return `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}` })
   const [turnoSel, setTurnoSel] = useState<string | null>(null)
 
   const mappaRef = useRef<VistaMappHandle>(null)
+  const giornoSelRef = useRef(giornoSel)
+  const turnoSelRef = useRef(turnoSel)
+  useEffect(() => { giornoSelRef.current = giornoSel }, [giornoSel])
+  useEffect(() => { turnoSelRef.current = turnoSel }, [turnoSel])
+
+  const salaAttiva = sale.find(s => s.id === salaAttivaId) ?? null
+  const tavoliSala = salaAttivaId ? tavoli.filter(t => t.salaId === salaAttivaId) : tavoli
 
   async function fetchTavoli() {
     const res = await fetch('/api/tavoli', { credentials: 'include' })
     const d = await res.json().catch(() => ({}))
     setTavoli(d.tavoli ?? []); setLoading(false)
+  }
+
+  async function fetchSale() {
+    const res = await fetch('/api/sale', { credentials: 'include' })
+    const d = await res.json().catch(() => ({}))
+    const s: Sala[] = d.sale ?? []
+    setSale(s)
+    // Mantieni la sala attiva se ancora esiste, altrimenti prendi la prima
+    setSalaAttivaId(prev => {
+      if (prev && s.find(x => x.id === prev)) return prev
+      return s[0]?.id ?? null
+    })
+    return s
   }
 
   async function fetchOrdini() {
@@ -662,7 +702,6 @@ export default function TavoliPage() {
 
   async function chiudiConto(o: Ordine) {
     setChiudendo(o.id)
-    // ottimistico: sposta subito
     setOrdiniAperti(prev => prev.filter(x => x.id !== o.id))
     setOrdiniChiusi(prev => [{ ...o, status: 'chiuso' }, ...prev])
     try {
@@ -672,17 +711,11 @@ export default function TavoliPage() {
         body: JSON.stringify({ tavoloId: o.tavoloId, gruppoId: o.gruppoId }),
       })
       await Promise.all([fetchOrdini(), fetchTavoli(), fetchGruppi(giornoSelRef.current, turnoSelRef.current)])
-    } finally {
-      setChiudendo(null)
-    }
+    } finally { setChiudendo(null) }
   }
 
   async function riapriConto(o: Ordine) {
-    await fetch(`/api/ordini/${o.id}`, {
-      method: 'PATCH', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'aperto' }),
-    })
+    await fetch(`/api/ordini/${o.id}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'aperto' }) })
     await fetchOrdini()
   }
 
@@ -691,11 +724,6 @@ export default function TavoliPage() {
     await fetchOrdini()
   }
 
-  const giornoSelRef = useRef(giornoSel)
-  const turnoSelRef = useRef(turnoSel)
-  useEffect(() => { giornoSelRef.current = giornoSel }, [giornoSel])
-  useEffect(() => { turnoSelRef.current = turnoSel }, [turnoSel])
-
   async function fetchGruppi(data: string, turnoId: string | null) {
     const params = new URLSearchParams({ data })
     if (turnoId) params.set('turnoId', turnoId)
@@ -703,15 +731,16 @@ export default function TavoliPage() {
     const d = await res.json().catch(() => ({}))
     setGruppi(d.gruppi ?? [])
   }
+
   useEffect(() => {
     fetchTavoli()
+    fetchSale()
     fetch('/api/me', { credentials: 'include' }).then(r => r.json()).then(d => {
       setPublicId(d.user?.publicId ?? null)
       try {
         const ts = JSON.parse(d.user?.turniServizio ?? '[]')
         ts.sort((a: TurnoServizio, b: TurnoServizio) => toMinutes(a.oraInizio) - toMinutes(b.oraInizio))
         setTurniServizio(ts)
-        // Seleziona il turno corrente o il prossimo più vicino
         const now = new Date()
         const nowMin = now.getHours() * 60 + now.getMinutes()
         const corrente = ts.find((t: TurnoServizio) => toMinutes(t.oraInizio) <= nowMin && toMinutes(t.oraFine) > nowMin)
@@ -719,9 +748,7 @@ export default function TavoliPage() {
         const selezionato = (corrente ?? prossimo ?? ts[0])?.id ?? null
         setTurnoSel(selezionato)
         fetchGruppi(giornoSelRef.current, selezionato)
-      } catch {
-        fetchGruppi(giornoSelRef.current, null)
-      }
+      } catch { fetchGruppi(giornoSelRef.current, null) }
     }).catch(() => {})
     fetch('/api/appuntamenti', { credentials: 'include', cache: 'no-store' }).then(r => r.json()).then(d => setAppuntamenti(d.appuntamenti ?? [])).catch(() => {})
     fetchOrdini()
@@ -733,11 +760,22 @@ export default function TavoliPage() {
     return () => clearInterval(interval)
   }, [])
 
-  useEffect(() => {
-    fetchGruppi(giornoSel, turnoSel)
-  }, [giornoSel, turnoSel])
+  useEffect(() => { fetchGruppi(giornoSel, turnoSel) }, [giornoSel, turnoSel])
 
-  // Appuntamenti filtrati per giorno+turno (con overlap, non solo ora di inizio)
+  // Carica elementi della sala attiva
+  useEffect(() => {
+    if (!salaAttiva) return
+    try { setElementiSala(JSON.parse(salaAttiva.mapElementi ?? '[]')) } catch { setElementiSala([]) }
+  }, [salaAttivaId, sale])
+
+  // Aggiorna sale locale quando gli elementi cambiano (senza refetch)
+  function handleSaveElementi(el: Elemento[]) {
+    setElementiSala(el)
+    setSale(prev => prev.map(s => s.id === salaAttivaId ? { ...s, mapElementi: JSON.stringify(el) } : s))
+    if (salaAttivaId) saveSalaElementi(salaAttivaId, el)
+  }
+
+  // Appuntamenti filtrati per giorno+turno
   const turnoAttivo = turniServizio.find(t => t.id === turnoSel)
   const appTurno: AppuntamentoLight[] = (() => {
     if (!giornoSel) return []
@@ -751,12 +789,11 @@ export default function TavoliPage() {
       const appFine = appInizio + (a.durata ?? 90)
       const inizioT = toMinutes(turnoAttivo.oraInizio)
       const fineT = toMinutes(turnoAttivo.oraFine)
-      if (inizioT > fineT) return appInizio >= inizioT || appInizio < fineT // turno attraversa mezzanotte
-      return appInizio < fineT && appFine > inizioT // overlap
+      if (inizioT > fineT) return appInizio >= inizioT || appInizio < fineT
+      return appInizio < fineT && appFine > inizioT
     })
   })()
 
-  // Mappa tavoloId → lista appuntamenti sovrapposti + flag carryIn/carryOut per ognuno
   const tavoloAppsMap = new Map<string, (AppuntamentoLight & { carryIn: boolean; carryOut: boolean })[]>()
   appTurno.forEach(a => {
     const ids: string[] = (() => { try { return a.tavoliIds ? JSON.parse(a.tavoliIds) : (a.tavoloId ? [a.tavoloId] : []) } catch { return a.tavoloId ? [a.tavoloId] : [] } })()
@@ -767,32 +804,18 @@ export default function TavoliPage() {
     const fineT = turnoAttivo ? toMinutes(turnoAttivo.oraFine) : 1440
     const carryIn = !!turnoAttivo && appInizio < inizioT
     const carryOut = !!turnoAttivo && appFine > fineT
-    ids.forEach(id => {
-      const existing = tavoloAppsMap.get(id) ?? []
-      existing.push({ ...a, carryIn, carryOut })
-      tavoloAppsMap.set(id, existing)
-    })
+    ids.forEach(id => { const existing = tavoloAppsMap.get(id) ?? []; existing.push({ ...a, carryIn, carryOut }); tavoloAppsMap.set(id, existing) })
   })
-  // Compatibilità con componenti che usano tavoloAppMap (primo appuntamento per tavolo)
   const tavoloAppMap = new Map<string, AppuntamentoLight>()
   const tavoloCarryMap = new Map<string, { carryIn: boolean; carryOut: boolean }>()
-  tavoloAppsMap.forEach((apps, id) => {
-    tavoloAppMap.set(id, apps[0])
-    tavoloCarryMap.set(id, { carryIn: apps[0].carryIn, carryOut: apps[apps.length - 1].carryOut })
-  })
+  tavoloAppsMap.forEach((apps, id) => { tavoloAppMap.set(id, apps[0]); tavoloCarryMap.set(id, { carryIn: apps[0].carryIn, carryOut: apps[apps.length - 1].carryOut }) })
 
-  function toggleSelect(id: string) {
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
-  }
+  function toggleSelect(id: string) { setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]) }
 
   async function fondiTavoli() {
     if (selectedIds.length < 2) return
     setFondendo(true)
-    await fetch('/api/gruppi', {
-      method: 'POST', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tavoliIds: selectedIds, data: giornoSel, turnoId: turnoSel }),
-    })
+    await fetch('/api/gruppi', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tavoliIds: selectedIds, data: giornoSel, turnoId: turnoSel }) })
     setFondendo(false); setSelectedIds([]); setSelectMode(false)
     await Promise.all([fetchTavoli(), fetchGruppi(giornoSel, turnoSel)])
   }
@@ -819,28 +842,50 @@ export default function TavoliPage() {
     }})
   }
 
-  async function creaTavolo() {
-    if (!formV.numero) return; setSavingCrea(true)
-    const res = await fetch('/api/tavoli', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ numero: parseInt(formV.numero), etichetta: formV.etichetta || null, posti: parseInt(formV.posti) || 4, note: formV.note || null }) })
-    const data = await res.json()
-    if (data.tavolo?.id) mappaRef.current?.posizionaNuovoTavolo(data.tavolo.id, visual)
-    setSavingCrea(false); setFormV({ numero: '', etichetta: '', posti: '4', note: '' }); setShowCrea(false); fetchTavoli()
+  // Numero tavolo auto-incrementato (feature 1)
+  function apriNuovoTavolo() {
+    const nextNum = tavoli.length > 0 ? Math.max(...tavoli.map(t => t.numero)) + 1 : 1
+    setFormV({ numero: String(nextNum), etichetta: '', posti: '4', note: '' })
+    setVisual(DEFAULT_VISUAL)
+    setShowCrea(true)
   }
 
-  // Banner selezione attiva
+  async function creaTavolo() {
+    if (!formV.numero) return; setSavingCrea(true)
+    const res = await fetch('/api/tavoli', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ numero: parseInt(formV.numero), etichetta: formV.etichetta || null, posti: parseInt(formV.posti) || 4, note: formV.note || null, salaId: salaAttivaId }) })
+    const data = await res.json()
+    if (data.tavolo?.id) mappaRef.current?.posizionaNuovoTavolo(data.tavolo.id, visual)
+    setSavingCrea(false); setShowCrea(false); fetchTavoli()
+  }
+
+  async function creaSala() {
+    if (!nuovaSaleNome.trim()) return; setSalvandoSala(true)
+    await fetch('/api/sale', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: nuovaSaleNome.trim() }) })
+    setNuovaSaleNome(''); setSalvandoSala(false)
+    const s = await fetchSale()
+    if (s.length > 0) setSalaAttivaId(s[s.length - 1].id)
+  }
+
+  async function eliminaSala(id: string) {
+    if (sale.length <= 1) return
+    setConferma({ msg: `Eliminare questa sala? I tavoli verranno spostati alla prima sala disponibile.`, onConfirm: async () => {
+      await fetch(`/api/sale/${id}`, { method: 'DELETE', credentials: 'include' })
+      await fetchSale()
+      await fetchTavoli()
+    }})
+  }
+
   const selBanner = selectMode && (
     <div className="flex items-center gap-3 bg-electric-blue/10 border border-electric-blue/25 rounded-xl px-4 py-3">
       <span className="text-sm text-electric-blue font-medium flex-1">
         {selectedIds.length === 0 ? 'Clicca i tavoli da fondere' : `${selectedIds.length} tavol${selectedIds.length === 1 ? 'o' : 'i'} selezionat${selectedIds.length === 1 ? 'o' : 'i'}`}
       </span>
       {selectedIds.length >= 2 && (
-        <button onClick={fondiTavoli} disabled={fondendo}
-          className="bg-orange-500 text-white font-semibold px-4 py-1.5 rounded-lg text-sm hover:bg-orange-600 disabled:opacity-50">
+        <button onClick={fondiTavoli} disabled={fondendo} className="bg-orange-500 text-white font-semibold px-4 py-1.5 rounded-lg text-sm hover:bg-orange-600 disabled:opacity-50">
           {fondendo ? '...' : `Fondi ${selectedIds.length} tavoli`}
         </button>
       )}
-      <button onClick={() => { setSelectMode(false); setSelectedIds([]) }}
-        className="text-sm text-ink-navy/50 hover:text-ink-navy/70 border border-ink-navy/15 px-3 py-1.5 rounded-lg">Annulla</button>
+      <button onClick={() => { setSelectMode(false); setSelectedIds([]) }} className="text-sm text-ink-navy/50 hover:text-ink-navy/70 border border-ink-navy/15 px-3 py-1.5 rounded-lg">Annulla</button>
     </div>
   )
 
@@ -857,8 +902,7 @@ export default function TavoliPage() {
             className={`font-semibold px-4 py-2 rounded-xl text-sm border transition-colors ${selectMode ? 'bg-electric-blue/15 border-electric-blue/40 text-electric-blue' : 'bg-white border-ink-navy/15 text-ink-navy/70 hover:bg-mist'}`}>
             {selectMode ? '✕ Esci selezione' : 'Fondi tavoli'}
           </button>
-          <button onClick={() => setShowCrea(true)}
-            className="bg-electric-blue text-white font-semibold px-4 py-2 rounded-xl text-sm hover:bg-electric-blue/90 shadow-sm">
+          <button onClick={apriNuovoTavolo} className="bg-electric-blue text-white font-semibold px-4 py-2 rounded-xl text-sm hover:bg-electric-blue/90 shadow-sm">
             + Nuovo tavolo
           </button>
         </div>
@@ -866,61 +910,80 @@ export default function TavoliPage() {
 
       {!publicId && tavoli.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700">
-           Nessun <strong>publicId</strong> configurato — i QR non possono essere generati.
+          Nessun <strong>publicId</strong> configurato — i QR non possono essere generati.
         </div>
       )}
 
       {selBanner}
 
-      {/* Tab switch */}
-      <div className="flex gap-2">
+      {/* Tab switch + Sale */}
+      <div className="flex items-center gap-2 flex-wrap">
         {[{ k: 'mappa', l: 'Mappa' }, { k: 'lista', l: 'Lista' }].map(t => (
-          <button key={t.k} onClick={() => setVista(t.k as 'mappa' | 'lista' | 'conto')}
+          <button key={t.k} onClick={() => setVista(t.k as 'mappa' | 'lista')}
             className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${vista === t.k ? 'bg-electric-blue text-white' : 'bg-white border border-ink-navy/15 text-ink-navy/60 hover:bg-mist'}`}>
             {t.l}
           </button>
         ))}
+
+        {/* Separatore + tab sale (solo in mappa) */}
+        {vista === 'mappa' && sale.length > 0 && (
+          <>
+            <div className="w-px h-5 bg-ink-navy/15 mx-1" />
+            {sale.map(s => (
+              <button key={s.id} onClick={() => setSalaAttivaId(s.id)}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${salaAttivaId === s.id ? 'bg-ink-navy text-white' : 'bg-white border border-ink-navy/15 text-ink-navy/60 hover:bg-mist'}`}>
+                {s.nome}
+                {(s._count?.tavoli ?? 0) > 0 && <span className="ml-1.5 text-xs opacity-60">{s._count?.tavoli}</span>}
+              </button>
+            ))}
+            <button onClick={() => setShowSale(true)}
+              className="px-3 py-1.5 rounded-full text-sm font-medium bg-white border border-dashed border-ink-navy/20 text-ink-navy/40 hover:bg-mist hover:border-ink-navy/30 transition-colors">
+              + Sala
+            </button>
+          </>
+        )}
       </div>
 
       {/* Selettore giorno + turno */}
       <div className="bg-white border border-ink-navy/10 rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Giorno</span>
-            <input type="date" value={giornoSel} onChange={e => setGiornoSel(e.target.value)}
-              className="border border-ink-navy/15 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-electric-blue" />
-            <button onClick={() => setGiornoSel((() => { const _d = new Date(); return `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}` })())}
-              className="text-xs text-electric-blue font-semibold px-2 py-1 border border-electric-blue/25 rounded-lg hover:bg-electric-blue/10">Oggi</button>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Turno</span>
-            {turniServizio.map(t => (
-              <button key={t.id} onClick={() => setTurnoSel(t.id)}
-                className={`text-sm font-semibold px-3 py-1 rounded-full transition-colors ${turnoSel === t.id ? 'bg-electric-blue text-white' : 'bg-mist text-ink-navy/60 hover:bg-ink-navy/10'}`}>
-                {t.nome} <span className="text-xs opacity-70">{t.oraInizio}–{t.oraFine}</span>
-              </button>
-            ))}
-            {turniServizio.length > 0 && (
-              <button onClick={() => setTurnoSel(null)}
-                className={`text-sm font-semibold px-3 py-1 rounded-full transition-colors ${turnoSel === null ? 'bg-gray-700 text-white' : 'bg-mist text-ink-navy/50 hover:bg-ink-navy/10'}`}>
-                Tutti
-              </button>
-            )}
-            <a href="/dashboard/impostazioni?sezione=turni"
-              className="text-xs text-ink-navy/35 hover:text-electric-blue font-medium px-2 py-1 border border-ink-navy/10 rounded-lg hover:border-electric-blue/40 hover:bg-electric-blue/10 transition-colors">
-               Gestisci turni
-            </a>
-          </div>
-          {appTurno.length > 0 && (
-            <span className="ml-auto text-xs font-semibold text-electric-blue bg-electric-blue/10 px-2 py-1 rounded-full">
-              {appTurno.length} prenotazion{appTurno.length === 1 ? 'e' : 'i'}
-            </span>
-          )}
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Giorno</span>
+          <input type="date" value={giornoSel} onChange={e => setGiornoSel(e.target.value)}
+            className="border border-ink-navy/15 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-electric-blue" />
+          <button onClick={() => setGiornoSel((() => { const _d = new Date(); return `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}` })())}
+            className="text-xs text-electric-blue font-semibold px-2 py-1 border border-electric-blue/25 rounded-lg hover:bg-electric-blue/10">Oggi</button>
         </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Turno</span>
+          {turniServizio.map(t => (
+            <button key={t.id} onClick={() => setTurnoSel(t.id)}
+              className={`text-sm font-semibold px-3 py-1 rounded-full transition-colors ${turnoSel === t.id ? 'bg-electric-blue text-white' : 'bg-mist text-ink-navy/60 hover:bg-ink-navy/10'}`}>
+              {t.nome} <span className="text-xs opacity-70">{t.oraInizio}–{t.oraFine}</span>
+            </button>
+          ))}
+          {turniServizio.length > 0 && (
+            <button onClick={() => setTurnoSel(null)}
+              className={`text-sm font-semibold px-3 py-1 rounded-full transition-colors ${turnoSel === null ? 'bg-gray-700 text-white' : 'bg-mist text-ink-navy/50 hover:bg-ink-navy/10'}`}>
+              Tutti
+            </button>
+          )}
+          <a href="/dashboard/impostazioni?sezione=turni" className="text-xs text-ink-navy/35 hover:text-electric-blue font-medium px-2 py-1 border border-ink-navy/10 rounded-lg hover:border-electric-blue/40 hover:bg-electric-blue/10 transition-colors">Gestisci turni</a>
+        </div>
+        {appTurno.length > 0 && (
+          <span className="ml-auto text-xs font-semibold text-electric-blue bg-electric-blue/10 px-2 py-1 rounded-full">
+            {appTurno.length} prenotazion{appTurno.length === 1 ? 'e' : 'i'}
+          </span>
+        )}
+      </div>
 
       {loading ? <p className="text-ink-navy/35 text-sm">Caricamento...</p> : (
         <>
           <div className={vista !== 'mappa' ? 'hidden' : ''}>
-            <VistaMappa ref={mappaRef} tavoli={tavoli} gruppi={gruppi}
+            <VistaMappa ref={mappaRef}
+              tavoli={tavoliSala} gruppi={gruppi}
+              salaAttiva={salaAttiva}
+              elementi={elementiSala}
+              onSaveElementi={handleSaveElementi}
               onModifica={apriModifica} onElimina={eliminaTavolo}
               selectMode={selectMode} selectedIds={selectedIds} onToggleSelect={toggleSelect}
               onSciogliGruppo={sciogliGruppo} tavoloAppMap={tavoloAppMap} tavoloCarryMap={tavoloCarryMap} tavoloAppsMap={tavoloAppsMap}
@@ -986,7 +1049,7 @@ export default function TavoliPage() {
         )
       })()}
 
-      {/* Modal modifica righe — sovrapposto al modal conto */}
+      {/* Modal modifica righe */}
       {contoModificaOrdine && (
         <ModificaOrdineModal
           ordine={contoModificaOrdine}
@@ -1006,6 +1069,19 @@ export default function TavoliPage() {
               <h3 className="text-lg font-bold text-ink-navy">Nuovo tavolo</h3>
               <button onClick={() => setShowCrea(false)} className="text-ink-navy/35 hover:text-ink-navy/60 text-xl font-bold">✕</button>
             </div>
+            {sale.length > 1 && (
+              <div>
+                <label className="block text-xs font-medium text-ink-navy/60 mb-1.5">Sala</label>
+                <div className="flex gap-2 flex-wrap">
+                  {sale.map(s => (
+                    <button key={s.id} onClick={() => setSalaAttivaId(s.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${salaAttivaId === s.id ? 'bg-electric-blue text-white border-electric-blue' : 'border-ink-navy/15 text-ink-navy/60 hover:bg-mist'}`}>
+                      {s.nome}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="grid sm:grid-cols-2 gap-5">
               <div className="space-y-3">
                 <div className="flex gap-3">
@@ -1043,7 +1119,7 @@ export default function TavoliPage() {
                   style={{ backgroundImage: 'radial-gradient(circle,#e5e7eb 1px,transparent 1px)', backgroundSize: '20px 20px' }}>
                   <div style={{ width: visual.w, height: visual.h, backgroundColor: visual.colore, borderRadius: visual.forma === 'cerchio' ? '50%' : 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
                     <span style={{ color: '#fff', fontWeight: 700, fontSize: 12 }}>{formV.etichetta || `T${formV.numero || '?'}`}</span>
-                    <span style={{ color: 'rgba(255,255,255,0.65)', fontSize: 9, marginTop: 1 }}> {formV.posti || 4}</span>
+                    <span style={{ color: 'rgba(255,255,255,0.65)', fontSize: 9, marginTop: 1 }}>{formV.posti || 4}</span>
                   </div>
                 </div>
               </div>
@@ -1056,7 +1132,7 @@ export default function TavoliPage() {
         </div>
       )}
 
-      {/* Modal MODIFICA */}
+      {/* Modal MODIFICA TAVOLO */}
       {editTavolo && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
@@ -1077,6 +1153,24 @@ export default function TavoliPage() {
               <div><label className="block text-xs font-medium text-ink-navy/60 mb-1">Note</label>
                 <input value={formEdit.note} onChange={e => setFormEdit(f => ({ ...f, note: e.target.value }))}
                   placeholder="es. Vicino alla finestra..." className="w-full border border-ink-navy/15 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-electric-blue" /></div>
+              {sale.length > 1 && (
+                <div>
+                  <label className="block text-xs font-medium text-ink-navy/60 mb-1.5">Sala</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {sale.map(s => (
+                      <button key={s.id}
+                        onClick={async () => {
+                          await fetch(`/api/tavoli/${editTavolo.id}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ salaId: s.id }) })
+                          setEditTavolo({ ...editTavolo, salaId: s.id })
+                          fetchTavoli()
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${editTavolo.salaId === s.id ? 'bg-ink-navy text-white border-ink-navy' : 'border-ink-navy/15 text-ink-navy/60 hover:bg-mist'}`}>
+                        {s.nome}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex gap-3">
               <button onClick={() => setEditTavolo(null)} className="flex-1 border border-ink-navy/15 text-ink-navy/70 font-semibold py-2.5 rounded-xl text-sm">Annulla</button>
@@ -1086,7 +1180,42 @@ export default function TavoliPage() {
         </div>
       )}
 
-      {/* Modal conferma interno */}
+      {/* Modal SALE */}
+      {showSale && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowSale(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-ink-navy">Gestisci sale</h3>
+              <button onClick={() => setShowSale(false)} className="text-ink-navy/35 hover:text-ink-navy/60 text-xl font-bold">✕</button>
+            </div>
+            <div className="space-y-2">
+              {sale.map(s => (
+                <div key={s.id} className="flex items-center justify-between px-3 py-2.5 bg-mist rounded-xl">
+                  <span className="text-sm font-semibold text-ink-navy">{s.nome}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-ink-navy/40">{s._count?.tavoli ?? 0} tavoli</span>
+                    {sale.length > 1 && (
+                      <button onClick={() => { setShowSale(false); eliminaSala(s.id) }}
+                        className="text-xs text-red-400 hover:text-red-600 font-semibold px-2 py-1 rounded-lg hover:bg-red-50">Elimina</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <input value={nuovaSaleNome} onChange={e => setNuovaSaleNome(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && creaSala()}
+                placeholder="Nome nuova sala..." className="flex-1 border border-ink-navy/15 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-electric-blue" />
+              <button onClick={creaSala} disabled={salvandoSala || !nuovaSaleNome.trim()}
+                className="bg-electric-blue text-white font-semibold px-4 py-2 rounded-xl text-sm disabled:opacity-50">
+                {salvandoSala ? '...' : 'Aggiungi'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal conferma */}
       {conferma && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setConferma(null)}>
           <div className="bg-white rounded-2xl shadow-xl p-6 w-80 mx-4" onClick={e => e.stopPropagation()}>

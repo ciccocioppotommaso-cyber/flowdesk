@@ -42,6 +42,7 @@ model User {
   preventivi         Preventivo[]
   slotDisponibili    SlotDisponibile[]
   tavoli             Tavolo[]
+  sale               Sala[]
   gruppiTavoli       GruppoTavoli[]
   turni              Turno[]
   menuCategorie      MenuCategoria[]
@@ -174,6 +175,17 @@ model GruppoTavoli {
   ordini    Ordine[]
 }
 
+model Sala {
+  id          String   @id @default(cuid())
+  userId      String
+  nome        String
+  ordine      Int      @default(0)
+  mapElementi String?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+  tavoli      Tavolo[]
+}
+
 model Tavolo {
   id           String         @id @default(cuid())
   userId       String
@@ -182,6 +194,7 @@ model Tavolo {
   posti        Int            @default(4)
   note         String?
   gruppoId     String?
+  salaId       String?
   mapX         Float?
   mapY         Float?
   mapW         Float?
@@ -193,6 +206,7 @@ model Tavolo {
   ordini       Ordine[]
   user         User           @relation(fields: [userId], references: [id])
   gruppo       GruppoTavoli?  @relation(fields: [gruppoId], references: [id])
+  sala         Sala?          @relation(fields: [salaId], references: [id])
 }
 
 model ListaAttesa {
