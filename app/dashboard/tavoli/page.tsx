@@ -58,6 +58,22 @@ function QRCanvas({ url, id }: { url: string; id: string }) {
   return <canvas ref={ref} id={id} className="rounded-xl" />
 }
 
+// ── Helpers serata ────────────────────────────────────────────────────────────
+// La serata inizia alle 04:00 UTC: ordini tra 00:00-03:59 UTC appartengono alla sera precedente
+function getSerataKey(createdAt: string): string {
+  const d = new Date(createdAt)
+  if (d.getUTCHours() < 4) d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10) // YYYY-MM-DD UTC
+}
+function fmtSerata(key: string): string {
+  const d = new Date(key + 'T12:00:00Z')
+  const oggi = new Date()
+  const ieri = new Date(); ieri.setUTCDate(ieri.getUTCDate() - 1)
+  if (key === getSerataKey(oggi.toISOString())) return 'Questa serata'
+  if (key === getSerataKey(ieri.toISOString())) return 'Ieri sera'
+  return d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })
+}
+
 // ── Vista CONTO ───────────────────────────────────────────────────────────────
 function VistaConto({ ordiniAperti, ordiniChiusi, onChiudi, chiudendo, onRiapri, onElimina }: {
   ordiniAperti: Ordine[]
@@ -74,20 +90,15 @@ function VistaConto({ ordiniAperti, ordiniChiusi, onChiudi, chiudendo, onRiapri,
     const ora = new Date(o.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
     return (
       <div className={`bg-white border rounded-xl overflow-hidden ${aperto ? 'border-electric-blue/30 shadow-sm' : 'border-ink-navy/10'}`}>
-        {/* Header */}
         <div className={`px-4 py-3 flex items-center justify-between gap-3 ${aperto ? 'bg-electric-blue/5' : 'bg-mist'}`}>
           <div className="flex items-center gap-2">
-            <span className={`text-sm font-bold ${aperto ? 'text-electric-blue' : 'text-ink-navy/50'}`}>
-              {o.tavolo}
-            </span>
+            <span className={`text-sm font-bold ${aperto ? 'text-electric-blue' : 'text-ink-navy/50'}`}>{o.tavolo}</span>
             <span className="text-xs text-ink-navy/35">{aperto ? 'aperto' : 'chiuso'} {ora}</span>
           </div>
           <div className="flex items-center gap-2">
             <span className={`text-base font-bold ${aperto ? 'text-ink-navy' : 'text-ink-navy/40'}`}>{fmt(o.totale)}</span>
             {aperto && (
-              <button
-                onClick={() => onChiudi(o)}
-                disabled={chiudendo === o.id}
+              <button onClick={() => onChiudi(o)} disabled={chiudendo === o.id}
                 className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-ink-navy text-white hover:bg-ink-navy/80 disabled:opacity-40 transition-colors">
                 {chiudendo === o.id ? '…' : 'Chiudi tavolo'}
               </button>
@@ -108,7 +119,6 @@ function VistaConto({ ordiniAperti, ordiniChiusi, onChiudi, chiudendo, onRiapri,
             )}
           </div>
         </div>
-        {/* Righe */}
         <div className={`divide-y divide-ink-navy/6 ${!aperto ? 'opacity-60' : ''}`}>
           {o.righe.map(r => (
             <div key={r.id} className="flex items-center justify-between px-4 py-2.5 gap-3">
@@ -120,13 +130,20 @@ function VistaConto({ ordiniAperti, ordiniChiusi, onChiudi, chiudendo, onRiapri,
               <span className="text-sm text-ink-navy/60 shrink-0">{fmt(r.prezzo * r.quantita)}</span>
             </div>
           ))}
-          {o.righe.length === 0 && (
-            <p className="px-4 py-3 text-sm text-ink-navy/30">Nessuna voce</p>
-          )}
+          {o.righe.length === 0 && <p className="px-4 py-3 text-sm text-ink-navy/30">Nessuna voce</p>}
         </div>
       </div>
     )
   }
+
+  // Raggruppa chiusi per serata (più recente prima)
+  const chiusiPerSerata = ordiniChiusi.reduce<Record<string, Ordine[]>>((acc, o) => {
+    const k = getSerataKey(o.createdAt)
+    if (!acc[k]) acc[k] = []
+    acc[k].push(o)
+    return acc
+  }, {})
+  const serateOrdinate = Object.keys(chiusiPerSerata).sort((a, b) => b.localeCompare(a))
 
   return (
     <div className="space-y-6">
@@ -140,23 +157,26 @@ function VistaConto({ ordiniAperti, ordiniChiusi, onChiudi, chiudendo, onRiapri,
             Nessun conto aperto — i QR dei tavoli apriranno automaticamente un conto quando il cliente ordina
           </div>
         ) : (
-          <div className="space-y-3">
-            {ordiniAperti.map(o => <OrdineCard key={o.id} o={o} aperto />)}
-          </div>
+          <div className="space-y-3">{ordiniAperti.map(o => <OrdineCard key={o.id} o={o} aperto />)}</div>
         )}
       </div>
 
-      {/* Conti chiusi oggi */}
-      {ordiniChiusi.length > 0 && (
-        <div>
-          <h2 className="text-sm font-semibold text-ink-navy/50 uppercase tracking-wider mb-3">
-            Chiusi oggi <span className="text-ink-navy/30 font-normal normal-case tracking-normal text-xs">(si azzerano alle 04:00)</span>
-          </h2>
+      {/* Storico chiusi per serata */}
+      {serateOrdinate.map(key => (
+        <div key={key}>
+          <div className="flex items-center gap-3 mb-3">
+            <h2 className="text-sm font-semibold text-ink-navy/50 uppercase tracking-wider capitalize">
+              {fmtSerata(key)}
+            </h2>
+            <span className="text-xs text-ink-navy/30">
+              {fmt(chiusiPerSerata[key].reduce((s, o) => s + o.totale, 0))} totale
+            </span>
+          </div>
           <div className="space-y-3">
-            {ordiniChiusi.map(o => <OrdineCard key={o.id} o={o} aperto={false} />)}
+            {chiusiPerSerata[key].map(o => <OrdineCard key={o.id} o={o} aperto={false} />)}
           </div>
         </div>
-      )}
+      ))}
     </div>
   )
 }
