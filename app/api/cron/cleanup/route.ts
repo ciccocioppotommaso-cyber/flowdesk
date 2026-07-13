@@ -120,6 +120,24 @@ export async function GET(req: Request) {
     }
   }
 
+  // 3. Marca come concluse le richieste di lead già cancellati (anche manualmente)
+  const statiFinali = ['concluso_completato', 'concluso_cancellato', 'concluso_no_show', 'cancellato']
+  const leadCancellatiTutti = await prisma.lead.findMany({
+    where: { cancellato: true },
+    select: { id: true },
+  })
+  if (leadCancellatiTutti.length > 0) {
+    const idsCancellati = leadCancellatiTutti.map(l => l.id)
+    const resConcl = await prisma.preventivo.updateMany({
+      where: {
+        leadId: { in: idsCancellati },
+        status: { notIn: statiFinali },
+      },
+      data: { status: 'concluso_cancellato' },
+    })
+    richiesteConcluse += resConcl.count
+  }
+
   return NextResponse.json({
     ok: true,
     appuntamentiCompletati: appAggiornati,
