@@ -10,15 +10,33 @@ export async function POST(req: Request) {
   const { tavoloId, gruppoId } = await req.json()
   if (!tavoloId && !gruppoId) return NextResponse.json({ error: 'tavoloId o gruppoId richiesti' }, { status: 400 })
 
-  // Trova tutti i conti aperti per questo tavolo/gruppo
+  // Chiude tutti i conti aperti per questo tavolo/gruppo
   const where = gruppoId
     ? { userId: user.id, gruppoId, status: { notIn: ['chiuso'] } }
     : { userId: user.id, tavoloId, gruppoId: null, status: { notIn: ['chiuso'] } }
 
   await prisma.ordine.updateMany({ where, data: { status: 'chiuso' } })
 
-  // Scioglie il gruppo se presente
+  // Segna come "confermato" gli appuntamenti attivi del tavolo (libera il tavolo in calendario)
+  const statiAttivi = ['in_attesa', 'confermato', 'pronto']
+  if (tavoloId) {
+    await prisma.appuntamento.updateMany({
+      where: { userId: user.id, tavoloId, status: { in: statiAttivi } },
+      data: { status: 'confermato' },
+    })
+  }
   if (gruppoId) {
+    const gruppo = await prisma.gruppoTavoli.findUnique({
+      where: { id: gruppoId },
+      include: { tavoli: { select: { id: true } } },
+    })
+    if (gruppo) {
+      const tavoloIds = gruppo.tavoli.map(t => t.id)
+      await prisma.appuntamento.updateMany({
+        where: { userId: user.id, tavoloId: { in: tavoloIds }, status: { in: statiAttivi } },
+        data: { status: 'confermato' },
+      })
+    }
     await prisma.gruppoTavoli.deleteMany({ where: { id: gruppoId, userId: user.id } })
   }
 

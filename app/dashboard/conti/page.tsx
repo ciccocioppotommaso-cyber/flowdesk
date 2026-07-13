@@ -3,7 +3,11 @@
 import { useState, useEffect, useCallback } from 'react'
 
 interface RigaOrdine { id: string; nome: string; quantita: number; prezzo: number; note?: string | null }
-interface Ordine { id: string; tavolo: string; tavoloId: string | null; gruppoId: string | null; totale: number; note: string | null; status: string; createdAt: string; righe: RigaOrdine[] }
+interface Ordine {
+  id: string; tavolo: string; tavoloId: string | null; gruppoId: string | null
+  totale: number; note: string | null; status: string; createdAt: string
+  tipo: string; righe: RigaOrdine[]
+}
 
 const fmt = (n: number) => `€${n.toFixed(2)}`
 
@@ -14,18 +18,21 @@ function getSerataKey(createdAt: string): string {
 }
 
 export default function ContiPage() {
-  const [ordiniAperti, setOrdiniAperti] = useState<Ordine[]>([])
-  const [ordiniChiusi, setOrdiniChiusi] = useState<Ordine[]>([])
+  const [ordini, setOrdini] = useState<Ordine[]>([])
   const [chiudendo, setChiudendo] = useState<string | null>(null)
   const [confermaElimina, setConfermaElimina] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState<'tavoli' | 'ordini'>('tavoli')
+  const [chiusiAperti, setChiusiAperti] = useState(false)
+  // modal modifica
+  const [modificando, setModificando] = useState<Ordine | null>(null)
+  const [righeLocali, setRigheLocali] = useState<RigaOrdine[]>([])
+  const [salvando, setSalvando] = useState(false)
 
   const fetchOrdini = useCallback(async () => {
     const res = await fetch('/api/ordini?oggi=1', { credentials: 'include' })
     const data = await res.json().catch(() => ({}))
-    const tutti: Ordine[] = data.ordini ?? []
-    setOrdiniAperti(tutti.filter(o => o.status !== 'chiuso'))
-    setOrdiniChiusi(tutti.filter(o => o.status === 'chiuso'))
+    setOrdini(data.ordini ?? [])
   }, [])
 
   useEffect(() => {
@@ -34,11 +41,16 @@ export default function ContiPage() {
     return () => clearInterval(iv)
   }, [fetchOrdini])
 
+  const tavoli = ordini.filter(o => o.tipo === 'tavolo' || o.tavoloId != null || o.gruppoId != null)
+  const altriOrdini = ordini.filter(o => o.tipo !== 'tavolo' && o.tavoloId == null && o.gruppoId == null)
+
+  const lista = tab === 'tavoli' ? tavoli : altriOrdini
+  const aperti = lista.filter(o => o.status !== 'chiuso')
+  const chiusi = lista.filter(o => o.status === 'chiuso')
+
   async function chiudiConto(o: Ordine) {
     setChiudendo(o.id)
-    // aggiorna ottimisticamente
-    setOrdiniAperti(prev => prev.filter(x => x.id !== o.id))
-    setOrdiniChiusi(prev => [{ ...o, status: 'chiuso' }, ...prev])
+    setOrdini(prev => prev.map(x => x.id === o.id ? { ...x, status: 'chiuso' } : x))
     try {
       await fetch('/api/tavoli/chiudi-conto', {
         method: 'POST', credentials: 'include',
@@ -51,31 +63,61 @@ export default function ContiPage() {
     }
   }
 
-  async function riapriConto(o: Ordine) {
-    setOrdiniChiusi(prev => prev.filter(x => x.id !== o.id))
-    setOrdiniAperti(prev => [{ ...o, status: 'aperto' }, ...prev])
-    await fetch(`/api/ordini/${o.id}`, {
-      method: 'PATCH', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'aperto' }),
-    })
-    fetchOrdini()
-  }
-
   async function eliminaOrdine(o: Ordine) {
-    setOrdiniChiusi(prev => prev.filter(x => x.id !== o.id))
+    setOrdini(prev => prev.filter(x => x.id !== o.id))
     await fetch(`/api/ordini/${o.id}`, { method: 'DELETE', credentials: 'include' })
     fetchOrdini()
   }
 
-  // Raggruppa chiusi per serata (solo oggi)
-  const serataOggi = getSerataKey(new Date().toISOString())
-  const chiusiOggi = ordiniChiusi.filter(o => getSerataKey(o.createdAt) === serataOggi)
+  function apriModifica(o: Ordine) {
+    setModificando(o)
+    setRigheLocali([...o.righe])
+  }
 
-  const totaleAperto = ordiniAperti.reduce((s, o) => s + o.totale, 0)
-  const totaleChiuso = chiusiOggi.reduce((s, o) => s + o.totale, 0)
+  async function rimuoviRiga(rigaId: string) {
+    if (!modificando) return
+    const riga = righeLocali.find(r => r.id === rigaId)
+    if (!riga) return
+    setRigheLocali(prev => prev.filter(r => r.id !== rigaId))
+    setSalvando(true)
+    const res = await fetch(`/api/ordini/${modificando.id}/riga`, {
+      method: 'DELETE', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rigaId }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (data.ordine) {
+      setOrdini(prev => prev.map(x => x.id === modificando.id ? { ...x, totale: data.ordine.totale, righe: righeLocali.filter(r => r.id !== rigaId) } : x))
+      setModificando(prev => prev ? { ...prev, totale: data.ordine.totale, righe: righeLocali.filter(r => r.id !== rigaId) } : null)
+    }
+    setSalvando(false)
+    fetchOrdini()
+  }
 
-  function OrdineCard({ o, aperto }: { o: Ordine; aperto: boolean }) {
+  async function cambiaQuantita(rigaId: string, delta: number) {
+    if (!modificando) return
+    const riga = righeLocali.find(r => r.id === rigaId)
+    if (!riga) return
+    const nuova = riga.quantita + delta
+    if (nuova <= 0) { rimuoviRiga(rigaId); return }
+    setRigheLocali(prev => prev.map(r => r.id === rigaId ? { ...r, quantita: nuova } : r))
+    setSalvando(true)
+    const res = await fetch(`/api/ordini/${modificando.id}/riga`, {
+      method: 'PATCH', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rigaId, quantita: nuova }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (data.ordine) {
+      setOrdini(prev => prev.map(x => x.id === modificando.id ? { ...x, totale: data.ordine.totale } : x))
+      setModificando(prev => prev ? { ...prev, totale: data.ordine.totale } : null)
+    }
+    setSalvando(false)
+    fetchOrdini()
+  }
+
+  function OrdineCard({ o }: { o: Ordine }) {
+    const aperto = o.status !== 'chiuso'
     const ora = new Date(o.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
     return (
       <div className={`bg-white border rounded-xl overflow-hidden ${aperto ? 'border-electric-blue/30 shadow-sm' : 'border-ink-navy/10'}`}>
@@ -84,7 +126,7 @@ export default function ContiPage() {
             <span className={`text-sm font-bold ${aperto ? 'text-electric-blue' : 'text-ink-navy/50'}`}>{o.tavolo}</span>
             <span className="text-xs text-ink-navy/35">{aperto ? 'aperto' : 'chiuso'} {ora}</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             <span className={`text-base font-bold ${aperto ? 'text-ink-navy' : 'text-ink-navy/40'}`}>{fmt(o.totale)}</span>
             {aperto && (
               <button onClick={() => chiudiConto(o)} disabled={chiudendo === o.id}
@@ -94,15 +136,20 @@ export default function ContiPage() {
             )}
             {!aperto && (
               <>
-                <span className="text-xs bg-emerald-100 text-emerald-700 font-semibold px-2 py-0.5 rounded-full">Chiuso</span>
-                <button onClick={() => riapriConto(o)} className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-ink-navy/15 text-ink-navy/60 hover:bg-mist transition-colors">Riapri</button>
+                <button onClick={() => apriModifica(o)}
+                  className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-ink-navy/15 text-ink-navy/60 hover:bg-mist transition-colors">
+                  Modifica
+                </button>
                 {confermaElimina === o.id ? (
                   <div className="flex items-center gap-1.5">
                     <button onClick={() => setConfermaElimina(null)} className="text-xs px-2 py-1 rounded-lg border border-ink-navy/15 text-ink-navy/50">No</button>
                     <button onClick={() => { eliminaOrdine(o); setConfermaElimina(null) }} className="text-xs px-2 py-1 rounded-lg bg-red-500 text-white font-semibold">Sì</button>
                   </div>
                 ) : (
-                  <button onClick={() => setConfermaElimina(o.id)} className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-red-200 text-red-400 hover:bg-red-50 transition-colors">Elimina</button>
+                  <button onClick={() => setConfermaElimina(o.id)}
+                    className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-red-200 text-red-400 hover:bg-red-50 transition-colors">
+                    Elimina
+                  </button>
                 )}
               </>
             )}
@@ -127,42 +174,118 @@ export default function ContiPage() {
 
   if (loading) return <div className="p-8 text-ink-navy/40 text-sm text-center">Caricamento…</div>
 
+  const totaleAperti = aperti.reduce((s, o) => s + o.totale, 0)
+  const totaleChiusi = chiusi.reduce((s, o) => s + o.totale, 0)
+
   return (
-    <div className="p-6 max-w-2xl mx-auto space-y-8">
+    <div className="p-6 max-w-2xl mx-auto space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-ink-navy">Conti</h1>
-          <p className="text-sm text-ink-navy/40 mt-0.5">Questa serata · aggiornamento automatico ogni 15s</p>
+          <p className="text-sm text-ink-navy/40 mt-0.5">Questa serata · aggiornamento ogni 15s</p>
         </div>
         <button onClick={fetchOrdini} className="text-xs text-electric-blue hover:underline font-medium">Aggiorna</button>
       </div>
 
-      {/* Conti aperti */}
+      {/* Tab */}
+      <div className="flex gap-2">
+        {([['tavoli', 'Tavoli'], ['ordini', 'Asporto & Delivery']] as const).map(([k, l]) => (
+          <button key={k} onClick={() => { setTab(k); setChiusiAperti(false) }}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${tab === k ? 'bg-electric-blue text-white' : 'bg-white border border-ink-navy/15 text-ink-navy/60 hover:bg-mist'}`}>
+            {l}
+            {k === 'tavoli' && tavoli.filter(o => o.status !== 'chiuso').length > 0 && (
+              <span className="ml-1.5 bg-zest-lime text-ink-navy text-xs font-bold px-1.5 py-0.5 rounded-full">
+                {tavoli.filter(o => o.status !== 'chiuso').length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Aperti */}
       <div>
         <div className="flex items-center gap-3 mb-3">
           <h2 className="text-sm font-semibold text-ink-navy/50 uppercase tracking-wider">
-            Conti aperti
-            {ordiniAperti.length > 0 && <span className="ml-1.5 bg-electric-blue text-white text-xs font-bold px-1.5 py-0.5 rounded-full">{ordiniAperti.length}</span>}
+            {tab === 'tavoli' ? 'Conti aperti' : 'In corso'}
+            {aperti.length > 0 && <span className="ml-1.5 bg-electric-blue text-white text-xs font-bold px-1.5 py-0.5 rounded-full">{aperti.length}</span>}
           </h2>
-          {totaleAperto > 0 && <span className="text-xs text-ink-navy/40">{fmt(totaleAperto)} in sospeso</span>}
+          {totaleAperti > 0 && <span className="text-xs text-ink-navy/40">{fmt(totaleAperti)} in sospeso</span>}
         </div>
-        {ordiniAperti.length === 0 ? (
+        {aperti.length === 0 ? (
           <div className="bg-white border border-ink-navy/10 rounded-xl p-8 text-center text-ink-navy/30 text-sm">
-            Nessun conto aperto — i QR dei tavoli apriranno automaticamente un conto quando il cliente ordina
+            {tab === 'tavoli'
+              ? 'Nessun conto aperto — i QR dei tavoli apriranno automaticamente un conto quando il cliente ordina'
+              : 'Nessun ordine in corso'}
           </div>
         ) : (
-          <div className="space-y-3">{ordiniAperti.map(o => <OrdineCard key={o.id} o={o} aperto />)}</div>
+          <div className="space-y-3">{aperti.map(o => <OrdineCard key={o.id} o={o} />)}</div>
         )}
       </div>
 
-      {/* Conti chiusi oggi */}
-      {chiusiOggi.length > 0 && (
+      {/* Chiusi — a scomparsa */}
+      {chiusi.length > 0 && (
         <div>
-          <div className="flex items-center gap-3 mb-3">
-            <h2 className="text-sm font-semibold text-ink-navy/50 uppercase tracking-wider">Chiusi questa serata</h2>
-            <span className="text-xs text-ink-navy/40">{fmt(totaleChiuso)} totale</span>
+          <button
+            onClick={() => setChiusiAperti(v => !v)}
+            className="w-full flex items-center gap-3 py-2 text-left group">
+            <span className="text-sm font-semibold text-ink-navy/50 uppercase tracking-wider">
+              Chiusi questa serata
+              <span className="ml-1.5 text-ink-navy/35 font-normal normal-case">({chiusi.length})</span>
+            </span>
+            <span className="text-xs text-ink-navy/40">{fmt(totaleChiusi)}</span>
+            <span className={`ml-auto text-ink-navy/30 transition-transform ${chiusiAperti ? 'rotate-180' : ''}`}>▾</span>
+          </button>
+          {chiusiAperti && (
+            <div className="space-y-3 mt-2">
+              {chiusi.map(o => <OrdineCard key={o.id} o={o} />)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modal modifica ordine chiuso */}
+      {modificando && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+            <div className="px-5 py-4 border-b border-ink-navy/8 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-ink-navy">Modifica ordine — {modificando.tavolo}</h3>
+                <p className="text-xs text-ink-navy/40 mt-0.5">L'ordine resta chiuso, nessun nuovo QR collegato</p>
+              </div>
+              <button onClick={() => setModificando(null)} className="text-ink-navy/30 hover:text-ink-navy/60 text-xl font-bold leading-none">✕</button>
+            </div>
+            <div className="divide-y divide-ink-navy/6 max-h-80 overflow-y-auto">
+              {righeLocali.length === 0 && (
+                <p className="px-5 py-4 text-sm text-ink-navy/30 text-center">Ordine vuoto</p>
+              )}
+              {righeLocali.map(r => (
+                <div key={r.id} className="flex items-center gap-3 px-5 py-3">
+                  <span className="flex-1 text-sm text-ink-navy truncate">{r.nome}</span>
+                  {r.note && <span className="text-xs text-ink-navy/35">({r.note})</span>}
+                  <span className="text-sm text-ink-navy/50 shrink-0">{fmt(r.prezzo * r.quantita)}</span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => cambiaQuantita(r.id, -1)} disabled={salvando}
+                      className="w-6 h-6 rounded-full bg-ink-navy/8 hover:bg-ink-navy/15 text-ink-navy font-bold text-sm flex items-center justify-center disabled:opacity-40">−</button>
+                    <span className="w-5 text-center text-sm font-semibold text-ink-navy">{r.quantita}</span>
+                    <button onClick={() => cambiaQuantita(r.id, +1)} disabled={salvando}
+                      className="w-6 h-6 rounded-full bg-ink-navy/8 hover:bg-ink-navy/15 text-ink-navy font-bold text-sm flex items-center justify-center disabled:opacity-40">+</button>
+                  </div>
+                  <button onClick={() => rimuoviRiga(r.id)} disabled={salvando}
+                    className="text-red-400 hover:text-red-600 text-sm font-bold disabled:opacity-40 pl-1">✕</button>
+                </div>
+              ))}
+            </div>
+            <div className="px-5 py-4 border-t border-ink-navy/8 flex items-center justify-between">
+              <span className="text-sm font-bold text-ink-navy">
+                Totale: {fmt(righeLocali.reduce((s, r) => s + r.prezzo * r.quantita, 0))}
+              </span>
+              <button onClick={() => setModificando(null)}
+                className="px-4 py-2 rounded-xl bg-electric-blue text-white text-sm font-semibold hover:bg-electric-blue/90 transition-colors">
+                Chiudi
+              </button>
+            </div>
           </div>
-          <div className="space-y-3">{chiusiOggi.map(o => <OrdineCard key={o.id} o={o} aperto={false} />)}</div>
         </div>
       )}
     </div>
