@@ -353,7 +353,8 @@ export default function AnalyticsPage() {
   interface BucketAdv { data: string; incasso: number; ordini: number; coperti: number; asporto: number; delivery: number }
   interface DatiTavoliAdv {
     totaleIncasso: number; totaleOrdini: number; copertiConfermati: number
-    spesaMediaPersona: number; tassoNoShow: number; durataMediaMinuti: number
+    copertiPrenotazione: number; copertiWalkIn: number
+    spesaMediaPersona: number; noShow: number; durataMediaMinuti: number
     andamento: BucketAdv[]
   }
   interface DatiOrdiniAdv {
@@ -748,7 +749,10 @@ td.eur{color:#16a34a;font-weight:600}td.cap{text-transform:capitalize}tr:nth-chi
 <div class="kpi">
   <div class="kpi-box"><p>Incasso totale</p><b>€${d.totaleIncasso.toFixed(0)}</b></div>
   <div class="kpi-box"><p>Conti chiusi</p><b>${d.totaleOrdini}</b></div>
-  <div class="kpi-box"><p>Coperti</p><b>${d.copertiConfermati}</b></div>
+  <div class="kpi-box"><p>Coperti totali</p><b>${d.copertiConfermati}</b></div>
+  <div class="kpi-box"><p>Su prenotazione</p><b>${d.copertiPrenotazione}</b></div>
+  <div class="kpi-box"><p>Walk-in</p><b>${d.copertiWalkIn}</b></div>
+  <div class="kpi-box"><p>No-show</p><b>${d.noShow}</b></div>
   <div class="kpi-box"><p>Spesa media/persona</p><b>${d.spesaMediaPersona > 0 ? '€' + d.spesaMediaPersona.toFixed(2) : '—'}</b></div>
   <div class="kpi-box"><p>Durata media</p><b>${d.durataMediaMinuti > 0 ? d.durataMediaMinuti + ' min' : '—'}</b></div>
 </div>
@@ -940,9 +944,10 @@ td.eur{color:#16a34a;font-weight:600}td.cap{text-transform:capitalize}tr:nth-chi
                   {[
                     { label: 'Incasso totale', val: fmtEur(d.totaleIncasso), sub: periodoAdvLabel, color: 'text-emerald-600' },
                     { label: 'Tavoli serviti', val: String(d.totaleOrdini), sub: 'conti chiusi', color: 'text-ink-navy' },
-                    { label: 'Coperti', val: String(d.copertiConfermati), sub: 'da prenotazioni', color: 'text-ink-navy' },
+                    { label: 'Coperti totali', val: String(d.copertiConfermati), sub: 'da ordini chiusi', color: 'text-ink-navy' },
+                    { label: 'Su prenotazione', val: String(d.copertiPrenotazione), sub: `walk-in: ${d.copertiWalkIn}`, color: 'text-electric-blue' },
                     { label: 'Spesa media/persona', val: fmtEur(d.spesaMediaPersona), sub: 'incasso ÷ coperti', color: 'text-electric-blue' },
-                    { label: 'Tasso no-show', val: d.tassoNoShow.toFixed(1) + '%', sub: 'prenotazioni non arrivate', color: d.tassoNoShow > 15 ? 'text-red-500' : d.tassoNoShow > 8 ? 'text-amber-500' : 'text-green-500' },
+                    { label: 'No-show', val: String(d.noShow), sub: 'prenotazioni non arrivate', color: d.noShow > 3 ? 'text-red-500' : d.noShow > 0 ? 'text-amber-500' : 'text-green-500' },
                     { label: 'Durata media tavolo', val: fmtMin(d.durataMediaMinuti), sub: "dall'ordine alla chiusura", color: 'text-electric-blue' },
                   ].map(k => (
                     <div key={k.label} className="bg-white rounded-2xl border border-ink-navy/10 p-5 shadow-sm">

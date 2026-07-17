@@ -56,7 +56,7 @@ export async function GET(req: Request) {
   oggi.setUTCHours(0, 0, 0, 0)
   const toEffettivo = to > oggi ? oggi : to
 
-  // Pre-popola tutti i bucket con zero (così appaiono sempre nel grafico)
+  // Pre-popola tutti i bucket con zero
   const bucketMap: Record<string, { incasso: number; ordini: number; coperti: number }> = {}
   if (byMonth) {
     const d = new Date(from)
@@ -74,20 +74,39 @@ export async function GET(req: Request) {
     }
   }
 
-  const ordini = await prisma.ordine.findMany({
-    where: {
-      userId: user.id,
-      tipo: 'tavolo',
-      status: 'chiuso',
-      createdAt: { gte: from, lt: toEffettivo },
-    },
-    select: { id: true, totale: true, coperti: true, createdAt: true, closedAt: true },
-  })
+  const [ordini, appuntamenti] = await Promise.all([
+    prisma.ordine.findMany({
+      where: {
+        userId: user.id,
+        tipo: 'tavolo',
+        status: 'chiuso',
+        createdAt: { gte: from, lt: toEffettivo },
+      },
+      select: { id: true, totale: true, coperti: true, gruppoId: true, createdAt: true, closedAt: true },
+    }),
+    prisma.appuntamento.findMany({
+      where: {
+        userId: user.id,
+        status: { in: ['confermato', 'no_show'] },
+        data: { gte: from, lt: toEffettivo },
+      },
+      select: { status: true, coperti: true },
+    }),
+  ])
 
+  // Deduplicazione gruppi: un gruppo conta come 1 sessione
+  const gruppiContati = new Set<string>()
   for (const o of ordini) {
     const k = bucketKey(o.createdAt, byMonth)
-    if (bucketMap[k]) {
-      bucketMap[k].incasso += o.totale
+    if (!bucketMap[k]) continue
+    bucketMap[k].incasso += o.totale
+    if (o.gruppoId) {
+      if (!gruppiContati.has(o.gruppoId)) {
+        gruppiContati.add(o.gruppoId)
+        bucketMap[k].ordini += 1
+        bucketMap[k].coperti += o.coperti ?? 0
+      }
+    } else {
       bucketMap[k].ordini += 1
       bucketMap[k].coperti += o.coperti ?? 0
     }
@@ -98,19 +117,55 @@ export async function GET(req: Request) {
     .map(([data, v]) => ({ data, ...v }))
 
   const totaleIncasso = ordini.reduce((s, o) => s + o.totale, 0)
-  const copertiConfermati = ordini.reduce((s, o) => s + (o.coperti ?? 0), 0)
+
+  // Coperti totali (deduplicated per gruppo)
+  const gruppiPerCoperti = new Set<string>()
+  let copertiConfermati = 0
+  for (const o of ordini) {
+    if (o.gruppoId) {
+      if (!gruppiPerCoperti.has(o.gruppoId)) {
+        gruppiPerCoperti.add(o.gruppoId)
+        copertiConfermati += o.coperti ?? 0
+      }
+    } else {
+      copertiConfermati += o.coperti ?? 0
+    }
+  }
+
+  // Coperti su prenotazione = somma coperti appuntamenti confermati
+  const copertiPrenotazione = appuntamenti
+    .filter(a => a.status === 'confermato')
+    .reduce((s, a) => s + a.coperti, 0)
+
+  const copertiWalkIn = Math.max(0, copertiConfermati - copertiPrenotazione)
+
+  const noShow = appuntamenti.filter(a => a.status === 'no_show').length
+
   const spesaMediaPersona = copertiConfermati > 0 ? totaleIncasso / copertiConfermati : 0
   const ordiniConDurata = ordini.filter(o => o.closedAt != null)
   const durataMedia = ordiniConDurata.length > 0
     ? ordiniConDurata.reduce((s, o) => s + (o.closedAt!.getTime() - o.createdAt.getTime()), 0) / ordiniConDurata.length / 60000
     : 0
 
+  // Totale tavoli deduplicati
+  const gruppiTot = new Set<string>()
+  let totaleTavoli = 0
+  for (const o of ordini) {
+    if (o.gruppoId) {
+      if (!gruppiTot.has(o.gruppoId)) { gruppiTot.add(o.gruppoId); totaleTavoli++ }
+    } else {
+      totaleTavoli++
+    }
+  }
+
   return NextResponse.json({
     totaleIncasso,
-    totaleOrdini: ordini.length,
+    totaleOrdini: totaleTavoli,
     copertiConfermati,
+    copertiPrenotazione,
+    copertiWalkIn,
     spesaMediaPersona,
-    tassoNoShow: 0,
+    noShow,
     durataMediaMinuti: Math.round(durataMedia),
     andamento,
   })
