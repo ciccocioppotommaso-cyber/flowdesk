@@ -339,6 +339,8 @@ export default function AnalyticsPage() {
   // ── nuove analytics avanzate ──
   type PeriodoAdv = 'settimana' | 'mese' | 'anno'
   const [periodoAdv, setPeriodoAdv] = useState<PeriodoAdv>('settimana')
+  const [riferimentoAdv, setRiferimentoAdv] = useState<Date>(new Date())
+  const [calendarioAdvAperto, setCalendarioAdvAperto] = useState(false)
 
   interface BucketAdv { data: string; incasso: number; ordini: number; coperti: number; asporto: number; delivery: number }
   interface DatiTavoliAdv {
@@ -351,8 +353,9 @@ export default function AnalyticsPage() {
     spesaMedia: number; tassoNonConsegnati: number
     andamento: BucketAdv[]; fasceOrarie: { ora: string; count: number }[]
   }
-  interface PiattoAdv { id: string; nome: string; quantita: number; incasso: number }
-  interface DatiMenuAdv { top10: PiattoAdv[]; bottom10: PiattoAdv[]; totale: number }
+  interface PiattoAdv { id: string; nome: string; quantita: number; incasso: number; categoria: string }
+  interface CategoriaAdv { nome: string; ordine: number; piatti: PiattoAdv[] }
+  interface DatiMenuAdv { top5: PiattoAdv[]; bottom5: PiattoAdv[]; categorie: CategoriaAdv[]; totale: number }
 
   const [datiTavoliAdv, setDatiTavoliAdv] = useState<DatiTavoliAdv | null>(null)
   const [loadingTavoliAdv, setLoadingTavoliAdv] = useState(false)
@@ -360,6 +363,10 @@ export default function AnalyticsPage() {
   const [loadingOrdiniAdv, setLoadingOrdiniAdv] = useState(false)
   const [datiMenuAdv, setDatiMenuAdv] = useState<DatiMenuAdv | null>(null)
   const [loadingMenuAdv, setLoadingMenuAdv] = useState(false)
+  const [pdfMenuModal, setPdfMenuModal] = useState(false)
+  const [pdfMenuPeriodo, setPdfMenuPeriodo] = useState<PeriodoAdv>('mese')
+  const [pdfMenuRif, setPdfMenuRif] = useState<Date>(new Date())
+  const [pdfMenuLoading, setPdfMenuLoading] = useState(false)
 
   // Dettaglio dipendente
   const [dettaglioDipId, setDettaglioDipId] = useState<string | null>(null)
@@ -487,26 +494,26 @@ export default function AnalyticsPage() {
   useEffect(() => {
     if (tabAnalytics !== 'tavoli') return
     setLoadingTavoliAdv(true)
-    fetch(`/api/analytics/tavoli?periodo=${periodoAdv}`, { credentials: 'include' })
+    fetch(`/api/analytics/tavoli?periodo=${periodoAdv}&riferimento=${riferimentoAdv.toISOString()}`, { credentials: 'include' })
       .then(r => r.json())
       .then(d => { setDatiTavoliAdv(d); setLoadingTavoliAdv(false) })
-  }, [tabAnalytics, periodoAdv])
+  }, [tabAnalytics, periodoAdv, riferimentoAdv])
 
   useEffect(() => {
     if (tabAnalytics !== 'ordini') return
     setLoadingOrdiniAdv(true)
-    fetch(`/api/analytics/ordini?periodo=${periodoAdv}`, { credentials: 'include' })
+    fetch(`/api/analytics/ordini?periodo=${periodoAdv}&riferimento=${riferimentoAdv.toISOString()}`, { credentials: 'include' })
       .then(r => r.json())
       .then(d => { setDatiOrdiniAdv(d); setLoadingOrdiniAdv(false) })
-  }, [tabAnalytics, periodoAdv])
+  }, [tabAnalytics, periodoAdv, riferimentoAdv])
 
   useEffect(() => {
     if (tabAnalytics !== 'menu') return
     setLoadingMenuAdv(true)
-    fetch(`/api/analytics/menu?periodo=${periodoAdv}`, { credentials: 'include' })
+    fetch(`/api/analytics/menu?periodo=${periodoAdv}&riferimento=${riferimentoAdv.toISOString()}`, { credentials: 'include' })
       .then(r => r.json())
       .then(d => { setDatiMenuAdv(d); setLoadingMenuAdv(false) })
-  }, [tabAnalytics, periodoAdv])
+  }, [tabAnalytics, periodoAdv, riferimentoAdv])
 
   function cambiaMe(mese: string) {
     setMeseSel(mese)
@@ -547,27 +554,120 @@ export default function AnalyticsPage() {
   function fmtEur(n: number) {
     return '€' + n.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
   }
+  function fmtMin(min: number) {
+    if (min <= 0) return '—'
+    if (min < 60) return `${min} min`
+    const h = Math.floor(min / 60)
+    const m = min % 60
+    return m > 0 ? `${h}h ${m}min` : `${h}h`
+  }
   function fmtDataAdv(s: string) {
-    // anno: chiave YYYY-MM → mostra "Gen", "Feb" …
     if (periodoAdv === 'anno') return new Date(s + '-01T12:00:00').toLocaleDateString('it-IT', { month: 'short' })
-    // settimana/mese: chiave YYYY-MM-DD
     const d = new Date(s + 'T12:00:00')
     if (periodoAdv === 'settimana') return d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric' })
     return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })
   }
-  const periodoAdvLabel = periodoAdv === 'settimana' ? 'questa settimana' : periodoAdv === 'mese' ? 'questo mese' : 'ultimi 12 mesi'
+  function getLabelAdv(rif: Date, p: string): string {
+    if (p === 'anno') return String(rif.getFullYear())
+    if (p === 'mese') return rif.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })
+    const dow = rif.getDay()
+    const diff = dow === 0 ? -6 : 1 - dow
+    const lun = new Date(rif); lun.setDate(rif.getDate() + diff)
+    const dom = new Date(lun); dom.setDate(lun.getDate() + 6)
+    return `${lun.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })} – ${dom.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })}`
+  }
+  const labelAdv = getLabelAdv(riferimentoAdv, periodoAdv)
+  const periodoAdvLabel = labelAdv
+
+  const prossimoAdv = spostaRiferimento(riferimentoAdv, periodoAdv, 1)
+  const oggiJs = new Date()
+  const isFuturoAdv = periodoAdv === 'anno'
+    ? prossimoAdv.getFullYear() > oggiJs.getFullYear()
+    : periodoAdv === 'mese'
+    ? new Date(prossimoAdv.getFullYear(), prossimoAdv.getMonth(), 1) > oggiJs
+    : (() => { const lun = new Date(prossimoAdv); lun.setDate(prossimoAdv.getDate() - ((prossimoAdv.getDay() + 6) % 7)); return lun > oggiJs })()
 
   function SelectorPeriodoAdv() {
     return (
-      <div className="flex rounded-xl border border-ink-navy/10 bg-white overflow-hidden shadow-sm text-sm font-medium w-fit">
-        {(['settimana', 'mese', 'anno'] as const).map(p => (
-          <button key={p} onClick={() => setPeriodoAdv(p)}
-            className={`px-4 py-2 capitalize transition-colors ${periodoAdv === p ? 'bg-electric-blue text-white' : 'text-ink-navy/50 hover:bg-mist'}`}>
-            {p.charAt(0).toUpperCase() + p.slice(1)}
+      <div className="flex items-start gap-3 flex-wrap">
+        <div className="flex rounded-xl border border-ink-navy/10 bg-white overflow-hidden shadow-sm text-sm font-medium">
+          {(['settimana', 'mese', 'anno'] as const).map(p => (
+            <button key={p} onClick={() => { setPeriodoAdv(p); setRiferimentoAdv(new Date()) }}
+              className={`px-4 py-2 capitalize transition-colors ${periodoAdv === p ? 'bg-electric-blue text-white' : 'text-ink-navy/50 hover:bg-mist'}`}>
+              {p.charAt(0).toUpperCase() + p.slice(1)}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 relative">
+          <button onClick={() => setRiferimentoAdv(r => spostaRiferimento(r, periodoAdv, -1))}
+            className="w-8 h-8 flex items-center justify-center rounded-lg border border-ink-navy/10 bg-white text-ink-navy/50 hover:bg-mist transition-colors text-lg">‹</button>
+          <button onClick={() => setCalendarioAdvAperto(v => !v)}
+            className="text-sm font-medium text-ink-navy/70 min-w-[180px] text-center px-3 py-1.5 rounded-lg border border-ink-navy/10 bg-white hover:bg-mist transition-colors">
+            {labelAdv}
           </button>
-        ))}
+          {calendarioAdvAperto && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setCalendarioAdvAperto(false)} />
+              <MiniCalendario periodo={periodoAdv} riferimento={riferimentoAdv}
+                onScegli={d => { setRiferimentoAdv(d); setCalendarioAdvAperto(false) }}
+                onChiudi={() => setCalendarioAdvAperto(false)} />
+            </>
+          )}
+          <button onClick={() => setRiferimentoAdv(r => spostaRiferimento(r, periodoAdv, 1))} disabled={isFuturoAdv}
+            className="w-8 h-8 flex items-center justify-center rounded-lg border border-ink-navy/10 bg-white text-ink-navy/50 hover:bg-mist transition-colors text-lg disabled:opacity-30">›</button>
+        </div>
       </div>
     )
+  }
+
+  async function scaricaPdfMenu() {
+    setPdfMenuLoading(true)
+    try {
+      const res = await fetch(`/api/analytics/menu?periodo=${pdfMenuPeriodo}&riferimento=${pdfMenuRif.toISOString()}`, { credentials: 'include' })
+      const d: DatiMenuAdv = await res.json()
+      const label = getLabelAdv(pdfMenuRif, pdfMenuPeriodo)
+      const rows = d.categorie.map(cat => {
+        const catRows = cat.piatti.map(p =>
+          `<tr><td class="cat-cell" style="padding-left:24px">${p.nome}</td><td class="num">${p.quantita}</td></tr>`
+        ).join('')
+        return `<tr class="cat-head"><td><strong>${cat.nome}</strong></td><td class="num"><strong>${cat.piatti.reduce((s, p) => s + p.quantita, 0)}</strong></td></tr>${catRows}`
+      }).join('')
+      const totale = d.categorie.reduce((s, c) => s + c.piatti.reduce((ss, p) => ss + p.quantita, 0), 0)
+      const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
+<title>Report Menu – ${label}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0 }
+  body { font-family: Arial, sans-serif; font-size: 13px; color: #111; padding: 32px; }
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .sub { color: #666; font-size: 13px; margin-bottom: 24px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th { background: #4f46e5; color: #fff; text-align: left; padding: 9px 12px; font-size: 12px; letter-spacing: .04em; }
+  th.num { text-align: right; }
+  td { padding: 8px 12px; border-bottom: 1px solid #e5e7eb; }
+  td.num { text-align: right; }
+  tr.cat-head td { background: #f1f5f9; font-weight: 700; color: #1e293b; border-top: 2px solid #cbd5e1; }
+  tr.total-row td { background: #eef2ff; font-weight: 700; border-top: 2px solid #4f46e5; }
+  @media print { body { padding: 16px } @page { margin: 1.5cm } }
+</style></head><body>
+<h1>Analisi Menu</h1>
+<div class="sub">Periodo: ${label}</div>
+<table>
+  <thead><tr><th>Piatto</th><th class="num">Pz venduti</th></tr></thead>
+  <tbody>
+    ${rows}
+    <tr class="total-row"><td>Totale</td><td class="num">${totale}</td></tr>
+  </tbody>
+</table>
+<div style="margin-top:24px;font-size:11px;color:#aaa;">Generato il ${new Date().toLocaleDateString('it-IT')}</div>
+</body></html>`
+      const win = window.open('', '_blank')
+      if (!win) return
+      win.document.write(html)
+      win.document.close()
+      setPdfMenuModal(false)
+    } finally {
+      setPdfMenuLoading(false)
+    }
   }
 
   // ── Dettaglio calcolato client-side ──────────────────────────────────────
@@ -694,7 +794,7 @@ export default function AnalyticsPage() {
                     { label: 'Coperti', val: String(d.copertiConfermati), sub: 'da prenotazioni', color: 'text-ink-navy' },
                     { label: 'Spesa media/persona', val: fmtEur(d.spesaMediaPersona), sub: 'incasso ÷ coperti', color: 'text-electric-blue' },
                     { label: 'Tasso no-show', val: d.tassoNoShow.toFixed(1) + '%', sub: 'prenotazioni non arrivate', color: d.tassoNoShow > 15 ? 'text-red-500' : d.tassoNoShow > 8 ? 'text-amber-500' : 'text-green-500' },
-                    { label: 'Durata media tavolo', val: d.durataMediaMinuti > 0 ? d.durataMediaMinuti + ' min' : '—', sub: "dall'ordine alla chiusura", color: 'text-electric-blue' },
+                    { label: 'Durata media tavolo', val: fmtMin(d.durataMediaMinuti), sub: "dall'ordine alla chiusura", color: 'text-electric-blue' },
                   ].map(k => (
                     <div key={k.label} className="bg-white rounded-2xl border border-ink-navy/10 p-5 shadow-sm">
                       <p className="text-xs text-ink-navy/50 uppercase tracking-wide">{k.label}</p>
@@ -709,11 +809,12 @@ export default function AnalyticsPage() {
                     <div className="flex items-end gap-1.5" style={{ height: 140 }}>
                       {d.andamento.map(b => {
                         const h = Math.round((b.incasso / maxInc) * 120)
+                        const barH = Math.max(h, b.incasso > 0 ? 4 : 0)
                         return (
                           <div key={b.data} className="flex-1 flex flex-col items-center gap-1">
-                            {b.incasso > 0 && <span className="text-[10px] text-ink-navy/50 font-medium leading-none">{fmtEur(b.incasso)}</span>}
-                            <div className="w-full flex flex-col justify-end" style={{ height: '120px' }}>
-                              <div className="w-full bg-emerald-500 rounded-t-lg" style={{ height: `${Math.max(h, b.incasso > 0 ? 4 : 0)}px` }} />
+                            <div className="w-full relative" style={{ height: '120px' }}>
+                              {b.incasso > 0 && <span className="absolute text-xs text-ink-navy/50 font-medium leading-none left-0 right-0 text-center" style={{ bottom: barH + 4 }}>{fmtEur(b.incasso)}</span>}
+                              <div className="absolute bottom-0 left-0 right-0 bg-emerald-500 rounded-t-lg" style={{ height: `${barH}px` }} />
                             </div>
                             <span className="text-[10px] text-ink-navy/35 leading-none">{fmtDataAdv(b.data)}</span>
                           </div>
@@ -728,11 +829,12 @@ export default function AnalyticsPage() {
                     <div className="flex items-end gap-1.5" style={{ height: 140 }}>
                       {d.andamento.map(b => {
                         const h = Math.round((b.coperti / maxCop) * 120)
+                        const barH = Math.max(h, b.coperti > 0 ? 4 : 0)
                         return (
                           <div key={b.data} className="flex-1 flex flex-col items-center gap-1">
-                            {b.coperti > 0 && <span className="text-[10px] text-ink-navy/50 font-medium leading-none">{b.coperti}</span>}
-                            <div className="w-full flex flex-col justify-end" style={{ height: '120px' }}>
-                              <div className="w-full bg-electric-blue rounded-t-lg" style={{ height: `${Math.max(h, b.coperti > 0 ? 4 : 0)}px` }} />
+                            <div className="w-full relative" style={{ height: '120px' }}>
+                              {b.coperti > 0 && <span className="absolute text-xs text-ink-navy/50 font-medium leading-none left-0 right-0 text-center" style={{ bottom: barH + 4 }}>{b.coperti}</span>}
+                              <div className="absolute bottom-0 left-0 right-0 bg-electric-blue rounded-t-lg" style={{ height: `${barH}px` }} />
                             </div>
                             <span className="text-[10px] text-ink-navy/35 leading-none">{fmtDataAdv(b.data)}</span>
                           </div>
@@ -742,26 +844,33 @@ export default function AnalyticsPage() {
                   )}
                 </div>
                 <div className="bg-white rounded-2xl border border-ink-navy/10 shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 border-b border-ink-navy/8"><h2 className="text-base font-semibold text-ink-navy">Dettaglio giornaliero</h2></div>
+                  <div className="px-6 py-4 border-b border-ink-navy/8">
+                    <h2 className="text-base font-semibold text-ink-navy">{periodoAdv === 'anno' ? 'Dettaglio mensile' : 'Dettaglio giornaliero'}</h2>
+                  </div>
                   {d.andamento.length === 0 ? <p className="text-ink-navy/35 text-sm px-6 py-8 text-center">Nessun dato</p> : (
                     <table className="w-full text-sm">
                       <thead className="bg-mist text-ink-navy/50 text-xs uppercase tracking-wide">
                         <tr>
-                          <th className="text-left px-6 py-3">Data</th>
+                          <th className="text-left px-6 py-3">{periodoAdv === 'anno' ? 'Mese' : 'Data'}</th>
                           <th className="text-right px-4 py-3">Conti chiusi</th>
                           <th className="text-right px-4 py-3">Coperti</th>
                           <th className="text-right px-6 py-3">Incasso</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {[...d.andamento].reverse().map(b => (
-                          <tr key={b.data} className="hover:bg-mist">
-                            <td className="px-6 py-3 font-medium text-ink-navy">{new Date(b.data + 'T12:00:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'long' })}</td>
-                            <td className="text-right px-4 py-3 text-ink-navy/70">{b.ordini || '—'}</td>
-                            <td className="text-right px-4 py-3 text-ink-navy/70">{b.coperti || '—'}</td>
-                            <td className="text-right px-6 py-3 text-emerald-600 font-medium">{b.incasso > 0 ? fmtEur(b.incasso) : '—'}</td>
-                          </tr>
-                        ))}
+                        {[...d.andamento].reverse().map(b => {
+                          const dataLabel = periodoAdv === 'anno'
+                            ? new Date(b.data + '-01T12:00:00').toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })
+                            : new Date(b.data + 'T12:00:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'long' })
+                          return (
+                            <tr key={b.data} className="hover:bg-mist">
+                              <td className="px-6 py-3 font-medium text-ink-navy capitalize">{dataLabel}</td>
+                              <td className="text-right px-4 py-3 text-ink-navy/70">{b.ordini || '—'}</td>
+                              <td className="text-right px-4 py-3 text-ink-navy/70">{b.coperti || '—'}</td>
+                              <td className="text-right px-6 py-3 text-emerald-600 font-medium">{b.incasso > 0 ? fmtEur(b.incasso) : '—'}</td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   )}
@@ -806,11 +915,12 @@ export default function AnalyticsPage() {
                     <div className="flex items-end gap-1.5" style={{ height: 140 }}>
                       {d.andamento.map(b => {
                         const h = Math.round((b.incasso / maxInc) * 120)
+                        const barH = Math.max(h, b.incasso > 0 ? 4 : 0)
                         return (
                           <div key={b.data} className="flex-1 flex flex-col items-center gap-1">
-                            {b.incasso > 0 && <span className="text-[10px] text-ink-navy/50 font-medium leading-none">{fmtEur(b.incasso)}</span>}
-                            <div className="w-full flex flex-col justify-end" style={{ height: '120px' }}>
-                              <div className="w-full bg-emerald-500 rounded-t-lg" style={{ height: `${Math.max(h, b.incasso > 0 ? 4 : 0)}px` }} />
+                            <div className="w-full relative" style={{ height: '120px' }}>
+                              {b.incasso > 0 && <span className="absolute text-xs text-ink-navy/50 font-medium leading-none left-0 right-0 text-center" style={{ bottom: barH + 4 }}>{fmtEur(b.incasso)}</span>}
+                              <div className="absolute bottom-0 left-0 right-0 bg-emerald-500 rounded-t-lg" style={{ height: `${barH}px` }} />
                             </div>
                             <span className="text-[10px] text-ink-navy/35 leading-none">{fmtDataAdv(b.data)}</span>
                           </div>
@@ -852,11 +962,12 @@ export default function AnalyticsPage() {
                       <div className="flex items-end gap-1" style={{ height: 120 }}>
                         {d.fasceOrarie.map(f => {
                           const h = Math.round((f.count / maxFascia) * 100)
+                          const barH = Math.max(h, f.count > 0 ? 3 : 0)
                           return (
                             <div key={f.ora} className="flex-1 flex flex-col items-center gap-1">
-                              {f.count > 0 && <span className="text-[10px] text-ink-navy/50 leading-none">{f.count}</span>}
-                              <div className="w-full flex flex-col justify-end" style={{ height: '100px' }}>
-                                <div className="w-full bg-amber-400 rounded-t-sm" style={{ height: `${Math.max(h, f.count > 0 ? 3 : 0)}px` }} />
+                              <div className="w-full relative" style={{ height: '100px' }}>
+                                {f.count > 0 && <span className="absolute text-xs text-ink-navy/50 font-medium leading-none left-0 right-0 text-center" style={{ bottom: barH + 4 }}>{f.count}</span>}
+                                <div className="absolute bottom-0 left-0 right-0 bg-amber-400 rounded-t-sm" style={{ height: `${barH}px` }} />
                               </div>
                               <span className="text-[10px] text-ink-navy/35 leading-none">{f.ora.slice(0, 5)}</span>
                             </div>
@@ -867,12 +978,14 @@ export default function AnalyticsPage() {
                   </div>
                 </div>
                 <div className="bg-white rounded-2xl border border-ink-navy/10 shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 border-b border-ink-navy/8"><h2 className="text-base font-semibold text-ink-navy">Dettaglio giornaliero</h2></div>
+                  <div className="px-6 py-4 border-b border-ink-navy/8">
+                    <h2 className="text-base font-semibold text-ink-navy">{periodoAdv === 'anno' ? 'Dettaglio mensile' : 'Dettaglio giornaliero'}</h2>
+                  </div>
                   {d.andamento.length === 0 ? <p className="text-ink-navy/35 text-sm px-6 py-8 text-center">Nessun dato</p> : (
                     <table className="w-full text-sm">
                       <thead className="bg-mist text-ink-navy/50 text-xs uppercase tracking-wide">
                         <tr>
-                          <th className="text-left px-6 py-3">Data</th>
+                          <th className="text-left px-6 py-3">{periodoAdv === 'anno' ? 'Mese' : 'Data'}</th>
                           <th className="text-right px-4 py-3">Asporto</th>
                           <th className="text-right px-4 py-3">Delivery</th>
                           <th className="text-right px-4 py-3">Totale</th>
@@ -880,15 +993,20 @@ export default function AnalyticsPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {[...d.andamento].reverse().map(b => (
+                        {[...d.andamento].reverse().map(b => {
+                          const dataLabel = periodoAdv === 'anno'
+                            ? new Date(b.data + '-01T12:00:00').toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })
+                            : new Date(b.data + 'T12:00:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'long' })
+                          return (
                           <tr key={b.data} className="hover:bg-mist">
-                            <td className="px-6 py-3 font-medium text-ink-navy">{new Date(b.data + 'T12:00:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'long' })}</td>
+                            <td className="px-6 py-3 font-medium text-ink-navy capitalize">{dataLabel}</td>
                             <td className="text-right px-4 py-3 text-ink-navy/70">{b.asporto || '—'}</td>
                             <td className="text-right px-4 py-3 text-ink-navy/70">{b.delivery || '—'}</td>
                             <td className="text-right px-4 py-3 text-ink-navy/70">{b.ordini || '—'}</td>
                             <td className="text-right px-6 py-3 text-emerald-600 font-medium">{b.incasso > 0 ? fmtEur(b.incasso) : '—'}</td>
                           </tr>
-                        ))}
+                          )
+                        })}
                       </tbody>
                     </table>
                   )}
@@ -904,84 +1022,140 @@ export default function AnalyticsPage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <SelectorPeriodoAdv />
-            {datiMenuAdv && <p className="text-xs text-ink-navy/40">{datiMenuAdv.totale} piatti ordinati nel periodo</p>}
+            <div className="flex items-center gap-3">
+              {datiMenuAdv && <p className="text-xs text-ink-navy/40">{datiMenuAdv.totale} piatti venduti nel periodo</p>}
+              <button onClick={() => setPdfMenuModal(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-ink-navy text-white text-xs font-semibold hover:bg-ink-navy/80 transition-colors">
+                ↓ Scarica PDF
+              </button>
+            </div>
           </div>
           {loadingMenuAdv && !datiMenuAdv && <div className="flex items-center justify-center h-64 text-ink-navy/35">Caricamento...</div>}
-          {datiMenuAdv && datiMenuAdv.top10.length === 0 && (
+          {datiMenuAdv && datiMenuAdv.top5.length === 0 && (
             <div className="bg-white rounded-2xl border border-ink-navy/10 p-12 text-center shadow-sm">
               <p className="text-ink-navy/35 text-sm">Nessun ordine nel periodo selezionato</p>
             </div>
           )}
-          {datiMenuAdv && datiMenuAdv.top10.length > 0 && (() => {
+          {datiMenuAdv && datiMenuAdv.top5.length > 0 && (() => {
             const d = datiMenuAdv
-            const maxTop = Math.max(...d.top10.map(p => p.quantita), 1)
-            const maxBot = Math.max(...d.bottom10.map(p => p.quantita), 1)
+            const maxTop = Math.max(...d.top5.map(p => p.quantita), 1)
+            const maxBot = Math.max(...d.bottom5.map(p => p.quantita), 1)
             return (
               <>
-                <div className="bg-white rounded-2xl border border-ink-navy/10 p-6 shadow-sm">
-                  <h2 className="text-base font-semibold text-ink-navy mb-5">Piatti più richiesti</h2>
-                  <div className="space-y-3">
-                    {d.top10.map((p, i) => (
-                      <div key={p.id} className="flex items-center gap-3">
-                        <span className="text-xs font-bold text-ink-navy/30 w-5 text-right shrink-0">{i + 1}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm font-medium text-ink-navy truncate">{p.nome}</span>
-                            <span className="text-xs text-ink-navy/50 ml-2 shrink-0">{p.quantita} pz · {fmtEur(p.incasso)}</span>
-                          </div>
-                          <div className="h-2 bg-mist rounded-full overflow-hidden">
-                            <div className="h-full bg-electric-blue rounded-full" style={{ width: `${Math.round((p.quantita / maxTop) * 100)}%` }} />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                {d.bottom10.length > 0 && d.totale > 1 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="bg-white rounded-2xl border border-ink-navy/10 p-6 shadow-sm">
-                    <h2 className="text-base font-semibold text-ink-navy mb-5">Piatti meno richiesti</h2>
+                    <h2 className="text-base font-semibold text-ink-navy mb-5">Top 5 più richiesti</h2>
                     <div className="space-y-3">
-                      {d.bottom10.map((p, i) => (
+                      {d.top5.map((p, i) => (
                         <div key={p.id} className="flex items-center gap-3">
                           <span className="text-xs font-bold text-ink-navy/30 w-5 text-right shrink-0">{i + 1}</span>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between mb-1">
                               <span className="text-sm font-medium text-ink-navy truncate">{p.nome}</span>
-                              <span className="text-xs text-ink-navy/50 ml-2 shrink-0">{p.quantita} pz · {fmtEur(p.incasso)}</span>
+                              <span className="text-xs text-ink-navy/50 ml-2 shrink-0">{p.quantita} pz</span>
                             </div>
                             <div className="h-2 bg-mist rounded-full overflow-hidden">
-                              <div className="h-full bg-red-400 rounded-full" style={{ width: `${Math.max(Math.round((p.quantita / maxBot) * 100), 4)}%` }} />
+                              <div className="h-full bg-electric-blue rounded-full" style={{ width: `${Math.round((p.quantita / maxTop) * 100)}%` }} />
                             </div>
                           </div>
                         </div>
                       ))}
                     </div>
                   </div>
-                )}
+                  {d.bottom5.length > 0 && d.totale > 5 && (
+                    <div className="bg-white rounded-2xl border border-ink-navy/10 p-6 shadow-sm">
+                      <h2 className="text-base font-semibold text-ink-navy mb-5">Top 5 meno richiesti</h2>
+                      <div className="space-y-3">
+                        {d.bottom5.map((p, i) => (
+                          <div key={p.id} className="flex items-center gap-3">
+                            <span className="text-xs font-bold text-ink-navy/30 w-5 text-right shrink-0">{i + 1}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-sm font-medium text-ink-navy truncate">{p.nome}</span>
+                                <span className="text-xs text-ink-navy/50 ml-2 shrink-0">{p.quantita} pz</span>
+                              </div>
+                              <div className="h-2 bg-mist rounded-full overflow-hidden">
+                                <div className="h-full bg-red-400 rounded-full" style={{ width: `${Math.max(Math.round((p.quantita / maxBot) * 100), 4)}%` }} />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div className="bg-white rounded-2xl border border-ink-navy/10 shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 border-b border-ink-navy/8"><h2 className="text-base font-semibold text-ink-navy">Classifica completa</h2></div>
+                  <div className="px-6 py-4 border-b border-ink-navy/8"><h2 className="text-base font-semibold text-ink-navy">Classifica per categoria</h2></div>
                   <table className="w-full text-sm">
                     <thead className="bg-mist text-ink-navy/50 text-xs uppercase tracking-wide">
                       <tr>
-                        <th className="text-left px-6 py-3">#</th>
-                        <th className="text-left px-4 py-3">Piatto</th>
-                        <th className="text-right px-4 py-3">Pezzi</th>
-                        <th className="text-right px-6 py-3">Incasso</th>
+                        <th className="text-left px-6 py-3">Piatto</th>
+                        <th className="text-right px-6 py-3">Pz venduti</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {d.top10.map((p, i) => (
-                        <tr key={p.id} className="hover:bg-mist">
-                          <td className="px-6 py-3 text-ink-navy/40 font-semibold">{i + 1}</td>
-                          <td className="px-4 py-3 font-medium text-ink-navy">{p.nome}</td>
-                          <td className="text-right px-4 py-3 text-ink-navy/70">{p.quantita}</td>
-                          <td className="text-right px-6 py-3 text-emerald-600 font-medium">{fmtEur(p.incasso)}</td>
-                        </tr>
+                    <tbody>
+                      {d.categorie.map(cat => (
+                        <>
+                          <tr key={cat.nome} className="bg-mist/60 border-t border-ink-navy/10">
+                            <td className="px-6 py-2 font-semibold text-ink-navy/70 text-xs uppercase tracking-wide" colSpan={2}>{cat.nome}</td>
+                          </tr>
+                          {cat.piatti.map((p, i) => (
+                            <tr key={p.id} className="hover:bg-mist border-t border-gray-100">
+                              <td className="px-6 py-2.5 text-ink-navy pl-8">
+                                <span className="text-ink-navy/30 font-bold mr-2">{i + 1}</span>{p.nome}
+                              </td>
+                              <td className="text-right px-6 py-2.5 text-ink-navy/70">{p.quantita}</td>
+                            </tr>
+                          ))}
+                        </>
                       ))}
                     </tbody>
                   </table>
                 </div>
               </>
+            )
+          })()}
+
+          {/* Modal PDF menu */}
+          {pdfMenuModal && (() => {
+            const ANNI = [new Date().getFullYear() - 1, new Date().getFullYear()]
+            const MESI_IT = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic']
+            const isFuturoPdfMenu = (() => {
+              const oggi = new Date()
+              if (pdfMenuPeriodo === 'anno') return pdfMenuRif.getFullYear() > oggi.getFullYear()
+              if (pdfMenuPeriodo === 'mese') return new Date(pdfMenuRif.getFullYear(), pdfMenuRif.getMonth(), 1) > oggi
+              const lun = new Date(pdfMenuRif); lun.setDate(pdfMenuRif.getDate() - ((pdfMenuRif.getDay() + 6) % 7))
+              return lun > oggi
+            })()
+            return (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-navy/30 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm mx-4">
+                  <div className="flex items-center justify-between mb-5">
+                    <h3 className="text-base font-bold text-ink-navy">Scarica PDF menu</h3>
+                    <button onClick={() => setPdfMenuModal(false)} className="text-ink-navy/30 hover:text-ink-navy text-xl leading-none">×</button>
+                  </div>
+                  <p className="text-xs text-ink-navy/50 mb-3 font-medium uppercase tracking-wide">Periodo</p>
+                  <div className="flex gap-2 mb-4">
+                    {(['settimana', 'mese', 'anno'] as const).map(p => (
+                      <button key={p} onClick={() => { setPdfMenuPeriodo(p); setPdfMenuRif(new Date()) }}
+                        className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-colors ${pdfMenuPeriodo === p ? 'bg-electric-blue text-white border-electric-blue' : 'border-ink-navy/15 text-ink-navy/60 hover:bg-mist'}`}>
+                        {p.charAt(0).toUpperCase() + p.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between gap-2 mb-5">
+                    <button onClick={() => setPdfMenuRif(r => spostaRiferimento(r, pdfMenuPeriodo, -1))}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-ink-navy/10 text-ink-navy/50 hover:bg-mist text-lg">‹</button>
+                    <span className="text-sm font-medium text-ink-navy text-center flex-1">{getLabelAdv(pdfMenuRif, pdfMenuPeriodo)}</span>
+                    <button onClick={() => setPdfMenuRif(r => spostaRiferimento(r, pdfMenuPeriodo, 1))} disabled={isFuturoPdfMenu}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-ink-navy/10 text-ink-navy/50 hover:bg-mist text-lg disabled:opacity-30">›</button>
+                  </div>
+                  <button onClick={scaricaPdfMenu} disabled={pdfMenuLoading}
+                    className="w-full py-2.5 bg-ink-navy text-white rounded-xl font-semibold text-sm hover:bg-ink-navy/80 transition-colors disabled:opacity-50">
+                    {pdfMenuLoading ? 'Generazione...' : 'Scarica PDF'}
+                  </button>
+                </div>
+              </div>
             )
           })()}
         </div>

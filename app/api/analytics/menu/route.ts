@@ -9,28 +9,41 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const periodo = searchParams.get('periodo') ?? 'settimana'
 
-  // Escludi oggi (dati parziali)
-  const today = new Date()
-  today.setUTCHours(0, 0, 0, 0)
+  const rifStr = searchParams.get('riferimento')
+  const rif = rifStr ? new Date(rifStr) : new Date()
 
-  let from: Date
+  const oggi = new Date()
+  oggi.setUTCHours(0, 0, 0, 0)
+
+  let from: Date, toEffettivo: Date
   if (periodo === 'anno') {
-    from = new Date(today)
-    from.setUTCMonth(from.getUTCMonth() - 12)
-    from.setUTCDate(1)
+    const anno = rif.getUTCFullYear()
+    from = new Date(Date.UTC(anno, 0, 1))
+    const to = new Date(Date.UTC(anno + 1, 0, 1))
+    toEffettivo = to > oggi ? oggi : to
   } else if (periodo === 'mese') {
-    from = new Date(today)
-    from.setUTCDate(from.getUTCDate() - 30)
+    const anno = rif.getUTCFullYear()
+    const mese = rif.getUTCMonth()
+    from = new Date(Date.UTC(anno, mese, 1))
+    const to = new Date(Date.UTC(anno, mese + 1, 1))
+    toEffettivo = to > oggi ? oggi : to
   } else {
-    from = new Date(today)
-    from.setUTCDate(from.getUTCDate() - 7)
+    const d = new Date(rif)
+    d.setUTCHours(0, 0, 0, 0)
+    const dow = d.getUTCDay()
+    const diff = dow === 0 ? -6 : 1 - dow
+    from = new Date(d)
+    from.setUTCDate(d.getUTCDate() + diff)
+    const to = new Date(from)
+    to.setUTCDate(from.getUTCDate() + 7)
+    toEffettivo = to > oggi ? oggi : to
   }
 
   const righe = await prisma.rigaOrdine.findMany({
     where: {
       ordine: {
         userId: user.id,
-        createdAt: { gte: from, lt: today },
+        createdAt: { gte: from, lt: toEffettivo },
       },
     },
     select: {
@@ -38,13 +51,26 @@ export async function GET(req: Request) {
       quantita: true,
       prezzo: true,
       piattoId: true,
+      piatto: {
+        select: {
+          categoria: { select: { nome: true, ordine: true } },
+        },
+      },
     },
   })
 
   // Aggrega per piatto
-  const piattoMap: Record<string, { nome: string; quantita: number; incasso: number }> = {}
+  const piattoMap: Record<string, { nome: string; quantita: number; incasso: number; categoria: string; categoriaOrdine: number }> = {}
   for (const r of righe) {
-    if (!piattoMap[r.piattoId]) piattoMap[r.piattoId] = { nome: r.nome, quantita: 0, incasso: 0 }
+    if (!piattoMap[r.piattoId]) {
+      piattoMap[r.piattoId] = {
+        nome: r.nome,
+        quantita: 0,
+        incasso: 0,
+        categoria: r.piatto?.categoria?.nome ?? 'Altro',
+        categoriaOrdine: r.piatto?.categoria?.ordine ?? 999,
+      }
+    }
     piattoMap[r.piattoId].quantita += r.quantita
     piattoMap[r.piattoId].incasso += r.prezzo * r.quantita
   }
@@ -53,8 +79,16 @@ export async function GET(req: Request) {
     .map(([id, v]) => ({ id, ...v }))
     .sort((a, b) => b.quantita - a.quantita)
 
-  const top10 = piatti.slice(0, 10)
-  const bottom10 = piatti.slice(-10).reverse()
+  // Raggruppa per categoria (ordinata)
+  const catMap: Record<string, { nome: string; ordine: number; piatti: typeof piatti }> = {}
+  for (const p of piatti) {
+    if (!catMap[p.categoria]) catMap[p.categoria] = { nome: p.categoria, ordine: p.categoriaOrdine, piatti: [] }
+    catMap[p.categoria].piatti.push(p)
+  }
+  const categorie = Object.values(catMap).sort((a, b) => a.ordine - b.ordine)
 
-  return NextResponse.json({ top10, bottom10, totale: piatti.length })
+  const top5 = piatti.slice(0, 5)
+  const bottom5 = piatti.length > 5 ? piatti.slice(-5).reverse() : []
+
+  return NextResponse.json({ top5, bottom5, categorie, totale: piatti.length })
 }
