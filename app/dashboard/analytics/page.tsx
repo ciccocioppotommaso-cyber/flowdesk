@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -363,6 +363,13 @@ export default function AnalyticsPage() {
   const [loadingOrdiniAdv, setLoadingOrdiniAdv] = useState(false)
   const [datiMenuAdv, setDatiMenuAdv] = useState<DatiMenuAdv | null>(null)
   const [loadingMenuAdv, setLoadingMenuAdv] = useState(false)
+
+  // Cache: evita refetch se periodo+riferimento non cambiano
+  const cacheAdv = useRef<{
+    tavoli?: { k: string; data: DatiTavoliAdv }
+    ordini?: { k: string; data: DatiOrdiniAdv }
+    menu?: { k: string; data: DatiMenuAdv }
+  }>({})
   const [pdfMenuModal, setPdfMenuModal] = useState(false)
   const [pdfMenuPeriodo, setPdfMenuPeriodo] = useState<PeriodoAdv>('mese')
   const [pdfMenuRif, setPdfMenuRif] = useState<Date>(new Date())
@@ -493,26 +500,35 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     if (tabAnalytics !== 'tavoli') return
+    const k = `${periodoAdv}|${riferimentoAdv.toISOString()}`
+    const cached = cacheAdv.current.tavoli
+    if (cached?.k === k) { setDatiTavoliAdv(cached.data); return }
     setLoadingTavoliAdv(true)
     fetch(`/api/analytics/tavoli?periodo=${periodoAdv}&riferimento=${riferimentoAdv.toISOString()}`, { credentials: 'include' })
       .then(r => r.json())
-      .then(d => { setDatiTavoliAdv(d); setLoadingTavoliAdv(false) })
+      .then(d => { cacheAdv.current.tavoli = { k, data: d }; setDatiTavoliAdv(d); setLoadingTavoliAdv(false) })
   }, [tabAnalytics, periodoAdv, riferimentoAdv])
 
   useEffect(() => {
     if (tabAnalytics !== 'ordini') return
+    const k = `${periodoAdv}|${riferimentoAdv.toISOString()}`
+    const cached = cacheAdv.current.ordini
+    if (cached?.k === k) { setDatiOrdiniAdv(cached.data); return }
     setLoadingOrdiniAdv(true)
     fetch(`/api/analytics/ordini?periodo=${periodoAdv}&riferimento=${riferimentoAdv.toISOString()}`, { credentials: 'include' })
       .then(r => r.json())
-      .then(d => { setDatiOrdiniAdv(d); setLoadingOrdiniAdv(false) })
+      .then(d => { cacheAdv.current.ordini = { k, data: d }; setDatiOrdiniAdv(d); setLoadingOrdiniAdv(false) })
   }, [tabAnalytics, periodoAdv, riferimentoAdv])
 
   useEffect(() => {
     if (tabAnalytics !== 'menu') return
+    const k = `${periodoAdv}|${riferimentoAdv.toISOString()}`
+    const cached = cacheAdv.current.menu
+    if (cached?.k === k) { setDatiMenuAdv(cached.data); return }
     setLoadingMenuAdv(true)
     fetch(`/api/analytics/menu?periodo=${periodoAdv}&riferimento=${riferimentoAdv.toISOString()}`, { credentials: 'include' })
       .then(r => r.json())
-      .then(d => { setDatiMenuAdv(d); setLoadingMenuAdv(false) })
+      .then(d => { cacheAdv.current.menu = { k, data: d }; setDatiMenuAdv(d); setLoadingMenuAdv(false) })
   }, [tabAnalytics, periodoAdv, riferimentoAdv])
 
   function cambiaMe(mese: string) {
@@ -858,7 +874,9 @@ export default function AnalyticsPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {[...d.andamento].reverse().map(b => {
+                        {[...d.andamento]
+                          .filter(b => periodoAdv !== 'anno' || b.ordini > 0 || b.incasso > 0 || b.coperti > 0)
+                          .reverse().map(b => {
                           const dataLabel = periodoAdv === 'anno'
                             ? new Date(b.data + '-01T12:00:00').toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })
                             : new Date(b.data + 'T12:00:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'long' })
@@ -931,30 +949,42 @@ export default function AnalyticsPage() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="bg-white rounded-2xl border border-ink-navy/10 p-6 shadow-sm">
-                    <h2 className="text-base font-semibold text-ink-navy mb-4">Asporto vs Delivery</h2>
-                    {d.andamento.length === 0 ? <p className="text-ink-navy/35 text-sm py-8 text-center">Nessun dato</p> : (
-                      <>
-                        <div className="flex items-end gap-1.5" style={{ height: 120 }}>
-                          {d.andamento.map(b => {
-                            const hA = Math.round((b.asporto / maxOrd) * 100)
-                            const hD = Math.round((b.delivery / maxOrd) * 100)
-                            return (
-                              <div key={b.data} className="flex-1 flex flex-col items-center gap-1">
-                                <div className="w-full flex flex-col justify-end gap-0.5" style={{ height: '100px' }}>
-                                  <div className="w-full bg-purple-400 rounded-t-sm" style={{ height: `${Math.max(hD, b.delivery > 0 ? 3 : 0)}px` }} />
-                                  <div className="w-full bg-electric-blue" style={{ height: `${Math.max(hA, b.asporto > 0 ? 3 : 0)}px` }} />
-                                </div>
-                                <span className="text-[10px] text-ink-navy/35 leading-none">{fmtDataAdv(b.data)}</span>
+                    <h2 className="text-base font-semibold text-ink-navy mb-5">Asporto vs Delivery</h2>
+                    {d.totaleOrdini === 0 ? <p className="text-ink-navy/35 text-sm py-8 text-center">Nessun dato</p> : (() => {
+                      const tot = d.asportoCount + d.deliveryCount
+                      const pctA = tot > 0 ? Math.round((d.asportoCount / tot) * 100) : 0
+                      const pctD = tot > 0 ? 100 - pctA : 0
+                      return (
+                        <>
+                          <div className="flex gap-3 mb-5">
+                            <div className="flex-1 bg-electric-blue/8 rounded-xl p-4">
+                              <p className="text-xs text-ink-navy/50 mb-1">Asporto</p>
+                              <p className="text-2xl font-bold text-electric-blue">{d.asportoCount}</p>
+                              <p className="text-xs text-ink-navy/40 mt-0.5">{pctA}% del totale</p>
+                            </div>
+                            {d.deliveryCount > 0 && (
+                              <div className="flex-1 bg-purple-50 rounded-xl p-4">
+                                <p className="text-xs text-ink-navy/50 mb-1">Delivery</p>
+                                <p className="text-2xl font-bold text-purple-500">{d.deliveryCount}</p>
+                                <p className="text-xs text-ink-navy/40 mt-0.5">{pctD}% del totale</p>
                               </div>
-                            )
-                          })}
-                        </div>
-                        <div className="flex gap-4 mt-3 text-xs text-ink-navy/50">
-                          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-electric-blue inline-block" /> Asporto</span>
-                          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-purple-400 inline-block" /> Delivery</span>
-                        </div>
-                      </>
-                    )}
+                            )}
+                          </div>
+                          {tot > 0 && (
+                            <div>
+                              <div className="flex rounded-full overflow-hidden h-3">
+                                <div className="bg-electric-blue transition-all" style={{ width: `${pctA}%` }} />
+                                <div className="bg-purple-400 transition-all" style={{ width: `${pctD}%` }} />
+                              </div>
+                              <div className="flex justify-between text-[10px] text-ink-navy/35 mt-1.5">
+                                <span>Asporto {pctA}%</span>
+                                {pctD > 0 && <span>Delivery {pctD}%</span>}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
                   </div>
                   <div className="bg-white rounded-2xl border border-ink-navy/10 p-6 shadow-sm">
                     <h2 className="text-base font-semibold text-ink-navy mb-4">Fasce orarie più richieste</h2>
@@ -993,7 +1023,9 @@ export default function AnalyticsPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {[...d.andamento].reverse().map(b => {
+                        {[...d.andamento]
+                          .filter(b => periodoAdv !== 'anno' || b.ordini > 0 || b.incasso > 0)
+                          .reverse().map(b => {
                           const dataLabel = periodoAdv === 'anno'
                             ? new Date(b.data + '-01T12:00:00').toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })
                             : new Date(b.data + 'T12:00:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'long' })
