@@ -9,24 +9,28 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const periodo = searchParams.get('periodo') ?? 'settimana'
 
-  const now = new Date()
+  // Escludi oggi (dati parziali)
+  const today = new Date()
+  today.setUTCHours(0, 0, 0, 0)
+
   let from: Date
   if (periodo === 'anno') {
-    from = new Date(now)
-    from.setFullYear(from.getFullYear() - 1)
+    from = new Date(today)
+    from.setUTCMonth(from.getUTCMonth() - 12)
+    from.setUTCDate(1)
   } else if (periodo === 'mese') {
-    from = new Date(now)
-    from.setMonth(from.getMonth() - 1)
+    from = new Date(today)
+    from.setUTCDate(from.getUTCDate() - 30)
   } else {
-    from = new Date(now)
-    from.setDate(from.getDate() - 7)
+    from = new Date(today)
+    from.setUTCDate(from.getUTCDate() - 7)
   }
 
   const righe = await prisma.rigaOrdine.findMany({
     where: {
       ordine: {
         userId: user.id,
-        createdAt: { gte: from },
+        createdAt: { gte: from, lt: today },
       },
     },
     select: {

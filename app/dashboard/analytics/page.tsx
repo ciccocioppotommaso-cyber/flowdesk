@@ -216,7 +216,7 @@ interface DettaglioDip {
 interface Preventivo { id: string; tipo: string | null; totale: number; status: string; createdAt: string }
 
 type Periodo = 'settimana' | 'mese' | 'anno'
-type TabAnalytics = 'servizi' | 'tavoli' | 'ordini' | 'menu' | 'personale'
+type TabAnalytics = 'tavoli' | 'ordini' | 'menu' | 'personale'
 type ExpandedCard = 'giorni' | 'ore' | 'ferie' | 'malattie' | 'permessi' | 'preferenze' | 'ritardi' | 'straordinari' | null
 
 // ── MiniCalendario ────────────────────────────────────────────────────────────
@@ -322,7 +322,7 @@ export default function AnalyticsPage() {
     setOggiMese(d.getMonth())
   }, [])
 
-  const [tabAnalytics, setTabAnalytics] = useState<TabAnalytics>('servizi')
+  const [tabAnalytics, setTabAnalytics] = useState<TabAnalytics>('tavoli')
   const [data, setData] = useState<Analytics | null>(null)
   const [loading, setLoading] = useState(true)
   const [periodo, setPeriodo] = useState<Periodo>('anno')
@@ -538,7 +538,6 @@ export default function AnalyticsPage() {
   const totDelivery = deliveryList.reduce((s, p) => s + p.totale, 0)
 
   const TABS: { key: TabAnalytics; label: string }[] = [
-    { key: 'servizi', label: 'Servizi' },
     { key: 'tavoli', label: 'Tavoli' },
     { key: 'ordini', label: 'Ordini & Asporto' },
     { key: 'menu', label: 'Menu' },
@@ -549,8 +548,12 @@ export default function AnalyticsPage() {
     return '€' + n.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
   }
   function fmtDataAdv(s: string) {
-    if (periodoAdv === 'anno') return new Date(s + 'T12:00:00').toLocaleDateString('it-IT', { month: 'short' })
-    return new Date(s + 'T12:00:00').toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })
+    // anno: chiave YYYY-MM → mostra "Gen", "Feb" …
+    if (periodoAdv === 'anno') return new Date(s + '-01T12:00:00').toLocaleDateString('it-IT', { month: 'short' })
+    // settimana/mese: chiave YYYY-MM-DD
+    const d = new Date(s + 'T12:00:00')
+    if (periodoAdv === 'settimana') return d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric' })
+    return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })
   }
   const periodoAdvLabel = periodoAdv === 'settimana' ? 'questa settimana' : periodoAdv === 'mese' ? 'questo mese' : 'ultimi 12 mesi'
 
