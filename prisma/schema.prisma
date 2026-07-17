@@ -98,6 +98,7 @@ model Ordine {
   totale      Float
   note        String?
   createdAt   DateTime      @default(now())
+  closedAt    DateTime?
   user        User          @relation(fields: [userId], references: [id])
   tavoloRel   Tavolo?       @relation(fields: [tavoloId], references: [id])
   gruppoRel   GruppoTavoli? @relation(fields: [gruppoId], references: [id])

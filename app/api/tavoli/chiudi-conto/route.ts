@@ -15,7 +15,7 @@ export async function POST(req: Request) {
     ? { userId: user.id, gruppoId, status: { notIn: ['chiuso'] } }
     : { userId: user.id, tavoloId, gruppoId: null, status: { notIn: ['chiuso'] } }
 
-  await prisma.ordine.updateMany({ where, data: { status: 'chiuso' } })
+  await prisma.ordine.updateMany({ where, data: { status: 'chiuso', closedAt: new Date() } })
 
   // Marca come "confermato" SOLO l'appuntamento della serata corrente il cui orario è già passato.
   // Filtro temporale: data >= inizio serata (04:00 UTC di oggi o ieri) e data <= adesso.
