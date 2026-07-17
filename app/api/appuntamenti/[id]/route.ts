@@ -74,7 +74,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   // Aggiornamento generico (status, note, ecc.)
-  const { tavoliIds: _ignored, ...data } = body
+  // Escludiamo esplicitamente i campi strutturali per evitare sovrascritture accidentali
+  const { tavoliIds: _ignored, data: _data, id: _id, userId: _userId, createdAt: _createdAt, ...data } = body
 
   if (data.tavoloId) {
     const corrente = await prisma.appuntamento.findFirst({ where: { id, userId: user.id } })

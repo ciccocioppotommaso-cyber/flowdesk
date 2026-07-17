@@ -81,14 +81,24 @@ export default function OrdinaPage() {
 
   async function inviaOrdine() {
     setInviando(true)
-    await fetch('/api/ordina', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ publicId, tavolo, righe: carrello, note: noteOrdine }),
-    })
-    setInviando(false)
-    setOrdinato(true)
-    setCarrello([])
+    try {
+      const res = await fetch('/api/ordina', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ publicId, tavolo, righe: carrello, note: noteOrdine }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(`Errore nell'invio dell'ordine: ${err.error ?? res.status}. Riprova o chiama il personale.`)
+        return
+      }
+      setOrdinato(true)
+      setCarrello([])
+    } catch {
+      alert('Errore di connessione. Riprova o chiama il personale.')
+    } finally {
+      setInviando(false)
+    }
   }
 
   if (loading) return (
