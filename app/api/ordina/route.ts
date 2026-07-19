@@ -101,7 +101,7 @@ export async function POST(req: Request) {
   const ordineAperto = await prisma.ordine.findFirst({
     where: gruppoId
       ? { gruppoId, status: 'aperto' }
-      : { tavoloId, gruppoId: null, status: 'aperto' },
+      : { tavoloId, status: 'aperto' },
     orderBy: { createdAt: 'desc' },
     include: { righe: true },
   })
