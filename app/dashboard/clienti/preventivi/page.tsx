@@ -1078,7 +1078,7 @@ function Richieste() {
 
       {/* Dettaglio richiesta */}
       {selected && (() => {
-        const t = tipoInfo(selected.tipo)
+        const t = TIPI.find(x => x.id === selected.tipo) ?? TIPI[1]
         const items = JSON.parse(selected.items) as Item[]
         return (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelected(null)}>

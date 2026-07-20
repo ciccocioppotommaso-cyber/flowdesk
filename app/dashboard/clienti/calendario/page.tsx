@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { IconTrash } from '../../../components/icons'
 
 const GIORNI_SHORT = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom']
@@ -116,6 +116,63 @@ function getTavoliIds(a: Appuntamento): string[] {
   catch { return a.tavoloId ? [a.tavoloId] : [] }
 }
 
+function MiniCalDropdown({ selectedDay, onSelect, onClose }: {
+  selectedDay: Date; onSelect: (d: Date) => void; onClose: () => void
+}) {
+  const [viewYear, setViewYear] = useState(selectedDay.getFullYear())
+  const [viewMonth, setViewMonth] = useState(selectedDay.getMonth())
+  const ref = useRef<HTMLDivElement>(null)
+  const GIORNI = ['L','M','M','G','V','S','D']
+  const MESI_L = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre']
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  const firstDay = new Date(Date.UTC(viewYear, viewMonth, 1))
+  const lastDay = new Date(Date.UTC(viewYear, viewMonth + 1, 0))
+  let startDow = firstDay.getUTCDay() - 1; if (startDow < 0) startDow = 6
+  const cells: (number | null)[] = Array(startDow).fill(null)
+  for (let d = 1; d <= lastDay.getUTCDate(); d++) cells.push(d)
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  function prevMonth() { if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y-1) } else setViewMonth(m => m-1) }
+  function nextMonth() { if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y+1) } else setViewMonth(m => m+1) }
+  const today = new Date()
+
+  return (
+    <div ref={ref} className="absolute z-50 top-full mt-1 left-1/2 -translate-x-1/2 bg-white rounded-2xl border border-ink-navy/10 shadow-xl p-3 w-64">
+      <div className="flex items-center justify-between mb-2">
+        <button onClick={prevMonth} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-mist text-ink-navy/50 text-sm">‹</button>
+        <span className="text-xs font-bold text-ink-navy">{MESI_L[viewMonth]} {viewYear}</span>
+        <button onClick={nextMonth} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-mist text-ink-navy/50 text-sm">›</button>
+      </div>
+      <div className="grid grid-cols-7 mb-1">
+        {GIORNI.map((g, i) => <span key={i} className="text-center text-[10px] font-semibold text-ink-navy/30 py-0.5">{g}</span>)}
+      </div>
+      <div className="grid grid-cols-7 gap-y-0.5">
+        {cells.map((day, i) => {
+          if (!day) return <span key={i} />
+          const d = new Date(viewYear, viewMonth, day)
+          const isSelected = isSameDay(d, selectedDay)
+          const isToday = isSameDay(d, today)
+          return (
+            <button key={i} onClick={() => { onSelect(d); onClose() }}
+              className={`h-8 w-full rounded-lg text-xs font-medium transition-colors
+                ${isSelected ? 'bg-electric-blue text-white font-bold' : isToday ? 'bg-electric-blue/10 text-electric-blue font-bold' : 'hover:bg-mist text-ink-navy'}`}>
+              {day}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function Calendario() {
   const [appuntamenti, setAppuntamenti] = useState<Appuntamento[]>([])
   const [loading, setLoading] = useState(true)
@@ -123,7 +180,7 @@ export default function Calendario() {
   const [showNuovo, setShowNuovo] = useState(false)
   const [vistaMessile, setVistaMensile] = useState(false)
   const [viewDay, setViewDay] = useState<Date | null>(null)
-  const [sezione, setSezione] = useState<'tavoli' | 'servizi'>('tavoli')
+  const [calDropOpen, setCalDropOpen] = useState(false)
 
   const [miniMonth, setMiniMonth] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d })
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
@@ -253,10 +310,7 @@ export default function Calendario() {
 
   function openNuovoConData(day: Date) {
     const iso = `${day.getFullYear()}-${String(day.getMonth()+1).padStart(2,'0')}-${String(day.getDate()).padStart(2,'0')}`
-    const defaults = sezione === 'tavoli'
-      ? { servizio: 'Prenotazione tavolo', durata: 90, ora: '20:00', coperti: 2 }
-      : { servizio: '', durata: 15, ora: '10:00', coperti: 1 }
-    setFormApp(f => ({ ...f, data: iso, tavoloId: '', allergie: '', occasione: '', note: '', clienteNome: '', clienteEmail: '', ...defaults }))
+    setFormApp(f => ({ ...f, data: iso, tavoloId: '', allergie: '', occasione: '', note: '', clienteNome: '', clienteEmail: '', servizio: 'Prenotazione tavolo', durata: 90, ora: '20:00', coperti: 2 }))
     setShowNuovo(true)
   }
 
@@ -267,27 +321,14 @@ export default function Calendario() {
       return `${weekStart.getDate()}–${fine.getDate()} ${MESI[weekStart.getMonth()]} ${weekStart.getFullYear()}`
     return `${weekStart.getDate()} ${MESI[weekStart.getMonth()]} – ${fine.getDate()} ${MESI[fine.getMonth()]} ${fine.getFullYear()}`
   })()
-  const sezioneInfo = {
-    tavoli:  { label: 'Tavoli',           tipi: ['tavolo'] as string[] },
-    servizi: { label: 'Servizi / Altro',  tipi: ['servizio', 'ordine', 'delivery'] as string[] },
-  }
-
-  function filterBySezione(apps: Appuntamento[]) {
-    const tipi = sezioneInfo[sezione].tipi
-    return apps.filter(a => tipi.includes(inferTipo(a.servizio)))
-  }
-
   function appForDayFiltered(day: Date) {
-    return filterBySezione(appForDay(day))
+    return appForDay(day).filter(a => inferTipo(a.servizio) === 'tavolo')
   }
-
-  const appProssimi = filterBySezione(appuntamenti).filter(a => new Date(a.data) >= today && a.status === 'confermato').length
 
   // ── Day view columns ──────────────────────────────────────
   const buildColumns = (day: Date) => {
     const dayApps = appForDayFiltered(day)
-    // Solo per tavoli mostriamo colonne per tavolo
-    if (sezione === 'tavoli' && tavoli.length > 0) {
+    if (tavoli.length > 0) {
       const tavoloOrdinato = [...tavoli].sort((a, b) => a.numero - b.numero)
       const tavoloIds = new Set(tavoloOrdinato.map(t => t.id))
       const senzaTavolo: Appuntamento[] = []
@@ -318,7 +359,7 @@ export default function Calendario() {
 
       return cols
     }
-    return [{ id: 'all', label: sezioneInfo[sezione].label, sublabel: '', apps: dayApps }]
+    return [{ id: 'all', label: 'Tavoli', sublabel: '', apps: dayApps }]
   }
 
   const hoursGrid = Array.from({ length: hourEnd - hourStart + 1 }, (_, i) => hourStart + i)
@@ -328,116 +369,18 @@ export default function Calendario() {
     <div className="max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-ink-navy">Calendario</h1>
-          <p className="text-ink-navy/50 mt-0.5">
-            {appProssimi > 0
-              ? <span className="text-electric-blue font-medium">{appProssimi} {sezione === 'tavoli' ? 'prenotazioni' : 'appuntamenti'} in programma</span>
-              : 'Nessuno in programma'}
-          </p>
-        </div>
+        <h1 className="text-2xl font-bold text-ink-navy">Calendario tavoli</h1>
         <button onClick={() => openNuovoConData(today)}
           className="bg-electric-blue text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-electric-blue/90">
-          {sezione === 'tavoli' ? '+ Prenota tavolo' : '+ Nuovo servizio'}
+          + Prenota tavolo
         </button>
       </div>
 
-      {/* Tab sezioni */}
-      {(() => {
-        const tabs = (Object.keys(sezioneInfo) as (typeof sezione)[]).map(key => ({
-          key,
-          label: sezioneInfo[key].label,
-          count: appuntamenti.filter(a =>
-            sezioneInfo[key].tipi.includes(inferTipo(a.servizio)) &&
-            isSameDay(new Date(a.data), today) &&
-            a.status === 'confermato'
-          ).length,
-        }))
-        return (
-          <div className="flex gap-1 bg-mist rounded-xl p-1 mb-5 w-fit">
-            {tabs.map(({ key, label, count }) => (
-              <button key={key} onClick={() => { setSezione(key); setViewDay(null) }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                  sezione === key ? 'bg-white text-ink-navy shadow-sm' : 'text-ink-navy/50 hover:text-ink-navy/70'
-                }`}>
-                {label}
-                {count > 0 && (
-                  <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${sezione === key ? 'bg-electric-blue/15 text-electric-blue' : 'bg-ink-navy/10 text-ink-navy/40'}`}>
-                    {count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        )
-      })()}
-
       {loading ? <div className="text-center text-ink-navy/35 py-12">Caricamento...</div> : (
-        <div className="flex gap-5">
-
-          {/* ── MINI CALENDARIO ── */}
-          <div className="w-56 shrink-0 space-y-4">
-            <div className="bg-white border border-ink-navy/10 rounded-xl p-3">
-              <div className="flex items-center justify-between mb-2">
-                <button onClick={() => setMiniMonth(m => new Date(m.getFullYear(), m.getMonth()-1, 1))} className="text-ink-navy/35 hover:text-ink-navy/70 text-sm px-1">‹</button>
-                <span className="text-xs font-semibold text-ink-navy/70">{MESI[miniMonth.getMonth()].slice(0,3)} {miniMonth.getFullYear()}</span>
-                <button onClick={() => setMiniMonth(m => new Date(m.getFullYear(), m.getMonth()+1, 1))} className="text-ink-navy/35 hover:text-ink-navy/70 text-sm px-1">›</button>
-              </div>
-              <div className="grid grid-cols-7 mb-1">
-                {GIORNI_SHORT.map(g => <div key={g} className="text-center text-[10px] font-semibold text-ink-navy/35">{g[0]}</div>)}
-              </div>
-              <div className="grid grid-cols-7 gap-y-0.5">
-                {miniGrid.map((day, i) => {
-                  if (!day) return <div key={i} />
-                  const isToday = isSameDay(day, today)
-                  const isInWeek = day >= weekStart && day <= addDays(weekStart, 6)
-                  const isViewDay = viewDay ? isSameDay(day, viewDay) : false
-                  const hasDot = hasApp(day)
-                  return (
-                    <button key={i} onClick={() => { jumpToDay(day); setViewDay(day) }}
-                      className={`relative flex flex-col items-center justify-center h-7 rounded-md text-xs font-medium transition-colors ${
-                        isViewDay ? 'bg-ink-navy text-white' :
-                        isToday ? 'bg-electric-blue text-white' :
-                        isInWeek ? 'bg-electric-blue/10 text-electric-blue' :
-                        'text-ink-navy/60 hover:bg-mist'
-                      }`}>
-                      {day.getDate()}
-                      {hasDot && !isToday && !isViewDay && (
-                        <span className={`absolute bottom-0.5 w-1 h-1 rounded-full ${isInWeek ? 'bg-electric-blue' : 'bg-electric-blue/40'}`} />
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-              <div className="flex gap-1.5 mt-2">
-                <button onClick={() => { setWeekStart(getMonday(today)); setMiniMonth(new Date(today.getFullYear(), today.getMonth(), 1)); setViewDay(null) }}
-                  className="flex-1 text-xs text-electric-blue hover:text-ink-navy font-medium py-1 border border-electric-blue/25 rounded-lg hover:bg-electric-blue/10">
-                  Oggi
-                </button>
-                <button onClick={() => setVistaMensile(true)}
-                  className="flex-1 text-xs text-electric-blue hover:text-ink-navy font-medium py-1 border border-electric-blue/25 rounded-lg hover:bg-electric-blue/10">
-                  Mese
-                </button>
-              </div>
-            </div>
-
-            {/* Legenda stati */}
-            <div className="bg-white border border-ink-navy/10 rounded-xl p-3 space-y-1.5">
-              <p className="text-xs font-semibold text-ink-navy/35 uppercase tracking-wider mb-2">Stato</p>
-              {([ ['confermato','Confermato'], ['completato','Completato'], ['no_show','No-show'], ['cancellato','Cancellato'] ] as [string,string][]).map(([key, label]) => {
-                const c = STATUS_COLORS[key]
-                return (
-                  <div key={key} className="flex items-center gap-2">
-                    <span className={`w-7 h-4 rounded shrink-0 ${c.bg} border-l-2`} style={{ borderLeftColor: '#94a3b8' }} />
-                    <span className="text-xs text-ink-navy/60">{label}</span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
+        <div>
 
           {/* ── VISTA PRINCIPALE ── */}
-          <div className="flex-1 min-w-0">
+          <div className="min-w-0">
 
             {viewDay ? (
               /* ── DAY VIEW ── */
@@ -446,8 +389,8 @@ export default function Calendario() {
                 const dayLabel = `${GIORNI_FULL[viewDay.getDay()]} ${viewDay.getDate()} ${MESI[viewDay.getMonth()]} ${viewDay.getFullYear()}`
                 const appsConfermati = appForDayFiltered(viewDay).filter(a => a.status === 'confermato')
                 const totalCoperti = appsConfermati.reduce((s, a) => s + (a.coperti ?? 1), 0)
-                const badgeCount = sezione === 'tavoli' ? totalCoperti : appsConfermati.length
-                const badgeLabel = sezione === 'tavoli' ? 'coperti' : 'servizi'
+                const badgeCount = totalCoperti
+                const badgeLabel = 'coperti'
 
                 return (
                   <div>
@@ -467,44 +410,8 @@ export default function Calendario() {
                       )}
                     </div>
 
-                    {/* Lista semplice per servizi / altro */}
-                    {sezione === 'servizi' && (() => {
-                      const apps = appForDayFiltered(viewDay).sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime())
-                      if (apps.length === 0) return (
-                        <div className="bg-white border border-ink-navy/10 rounded-xl p-8 text-center text-ink-navy/35 text-sm">
-                          Nessun appuntamento per oggi
-                        </div>
-                      )
-                      return (
-                        <div className="bg-white border border-ink-navy/10 rounded-xl overflow-y-auto space-y-2 p-3"
-                          style={{ maxHeight: 'calc(100vh - 280px)' }}>
-                          {apps.map(a => {
-                            const tipo = inferTipo(a.servizio)
-                            const ts = TIPO_STYLE[tipo]
-                            const sc = STATUS_COLORS[a.status] ?? STATUS_COLORS.confermato
-                            const ora = new Date(a.data).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-                            const [noteOrdine, noteInterna] = (a.note ?? '').split('\n')
-                            return (
-                              <div key={a.id} onClick={() => setSelected(a)}
-                                style={{ borderLeftWidth: 3, borderLeftColor: ts.barColor }}
-                                className={`${sc.bg} rounded-r-xl px-3 py-2.5 cursor-pointer hover:brightness-95 transition-all`}>
-                                <span className="text-xs font-bold text-ink-navy/50">{ora}</span>
-                                <p className="text-sm font-bold text-ink-navy mt-0.5">{a.clienteNome || 'Cliente'}</p>
-                                {a.servizio && <p className="text-xs text-ink-navy/50 mt-0.5 truncate">{a.servizio}</p>}
-                                {noteOrdine && <p className="text-xs font-medium text-ink-navy/70 mt-1 truncate">{noteOrdine}</p>}
-                                {a.allergie && a.allergie.toLowerCase() !== 'nessuna' && (
-                                  <p className="text-xs text-red-500 mt-0.5">{a.allergie}</p>
-                                )}
-                                {noteInterna && <p className="text-xs text-ink-navy/35 mt-0.5 truncate">{noteInterna}</p>}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )
-                    })()}
-
-                    {/* Timeline grid — unico contenitore scroll (x+y) con sticky header e sticky ore — solo tavoli */}
-                    {sezione === 'tavoli' && <div className="bg-white border border-ink-navy/10 rounded-xl overflow-auto"
+                    {/* Timeline grid — unico contenitore scroll (x+y) con sticky header e sticky ore */}
+                    <div className="bg-white border border-ink-navy/10 rounded-xl overflow-auto"
                       style={{ maxHeight: 'calc(100vh - 280px)', minWidth: 0 }}>
                       <div style={{ minWidth: 56 + cols.length * 140 }}>
 
@@ -629,23 +536,39 @@ export default function Calendario() {
                         ))}
                         </div>{/* fine Body */}
                       </div>{/* fine min-width wrapper */}
-                    </div>}
+                    </div>
                   </div>
                 )
               })()
             ) : (
               /* ── WEEK VIEW ── */
               <div>
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center mb-3 gap-2">
                   <button onClick={() => setWeekStart(d => addDays(d, -7))}
-                    className="text-sm text-ink-navy/50 hover:text-ink-navy px-3 py-1.5 border border-ink-navy/10 rounded-lg hover:bg-mist transition-colors">
-                    ← Prec.
-                  </button>
-                  <span className="text-sm font-semibold text-ink-navy/70">{weekLabel}</span>
+                    className="text-ink-navy/35 hover:text-ink-navy/70 px-1.5 py-1 rounded hover:bg-mist">‹</button>
+                  <div className="flex-1 flex items-center justify-center gap-2">
+                    <div className="relative">
+                      <button onClick={() => setCalDropOpen(v => !v)}
+                        className="text-sm font-semibold text-ink-navy/70 px-3 py-1.5 border border-ink-navy/10 rounded-lg hover:bg-mist transition-colors whitespace-nowrap">
+                        {weekLabel}
+                      </button>
+                      {calDropOpen && (
+                        <MiniCalDropdown
+                          selectedDay={viewDay ?? weekStart}
+                          onSelect={d => { jumpToDay(d); setViewDay(d) }}
+                          onClose={() => setCalDropOpen(false)}
+                        />
+                      )}
+                    </div>
+                    {!isSameDay(weekStart, getMonday(today)) && (
+                      <button onClick={() => { setWeekStart(getMonday(today)); setViewDay(null) }}
+                        className="text-xs text-electric-blue hover:text-ink-navy font-medium py-1 px-2 border border-electric-blue/25 rounded-lg hover:bg-electric-blue/10">
+                        Oggi
+                      </button>
+                    )}
+                  </div>
                   <button onClick={() => setWeekStart(d => addDays(d, 7))}
-                    className="text-sm text-ink-navy/50 hover:text-ink-navy px-3 py-1.5 border border-ink-navy/10 rounded-lg hover:bg-mist transition-colors">
-                    Succ. →
-                  </button>
+                    className="text-ink-navy/35 hover:text-ink-navy/70 px-1.5 py-1 rounded hover:bg-mist">›</button>
                 </div>
 
                 <div className="grid grid-cols-7 gap-2">
@@ -654,15 +577,9 @@ export default function Calendario() {
                     const isT = isSameDay(day, today)
                     const isPast = day < today && !isT
 
-                    // Contatori per sezione
-                    const nTavoli   = dayApps.filter(a => inferTipo(a.servizio) === 'tavolo').length
-                    const nServizi  = dayApps.length - nTavoli
-
                     const chips: { label: string; color: string }[] = []
-                    if (sezione === 'tavoli' && nTavoli > 0)
-                      chips.push({ label: `${nTavoli} tav.`, color: TIPO_STYLE.tavolo.barColor })
-                    if (sezione === 'servizi' && nServizi > 0)
-                      chips.push({ label: `${nServizi} serv.`, color: TIPO_STYLE.servizio.barColor })
+                    if (dayApps.length > 0)
+                      chips.push({ label: `${dayApps.length} tav.`, color: TIPO_STYLE.tavolo.barColor })
 
                     return (
                       <div key={di} onClick={() => setViewDay(day)}
@@ -937,26 +854,18 @@ export default function Calendario() {
           </div>
         )
 
-        const titleMap = { tavoli: 'Nuova prenotazione tavolo', servizi: 'Nuovo appuntamento' }
-        const saveLabel = { tavoli: 'Salva prenotazione', servizi: 'Salva appuntamento' }
-
         return (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 overflow-y-auto">
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4 my-4">
               <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-ink-navy">{titleMap[sezione]}</h2>
-                  <p className="text-xs text-ink-navy/40 mt-0.5">{sezioneInfo[sezione].label}</p>
-                </div>
+                <h2 className="text-lg font-bold text-ink-navy">Nuova prenotazione tavolo</h2>
                 <button onClick={() => setShowNuovo(false)} className="text-ink-navy/35 hover:text-ink-navy/60 text-xl">✕</button>
               </div>
 
               <div className="space-y-3">
                 {campiBase}
 
-                {/* ── TAVOLI ── */}
-                {sezione === 'tavoli' && (<>
-                  <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-ink-navy/70 mb-1">N° persone</label>
                       <input type="number" min={1} value={formApp.coperti}
@@ -1022,25 +931,7 @@ export default function Calendario() {
                       </div>
                     </div>
                   )}
-                </>)}
-
-{/* ── SERVIZI ── */}
-                {sezione === 'servizi' && (<>
-                  <div>
-                    <label className="block text-sm font-medium text-ink-navy/70 mb-1">Tipo di servizio *</label>
-                    <input type="text" placeholder="es. Consulenza, Corso di cucina, Degustazione…" value={formApp.servizio}
-                      onChange={e => setFormApp(f => ({ ...f, servizio: e.target.value }))} className={inp} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-ink-navy/70 mb-1">Durata</label>
-                    <select value={formApp.durata} onChange={e => setFormApp(f => ({ ...f, durata: Number(e.target.value) }))} className={inp}>
-                      {[30, 45, 60, 90, 120, 180].map(d => <option key={d} value={d}>{d} min</option>)}
-                    </select>
-                  </div>
-                  {campiNote}
-                </>)}
-
-                {sezione !== 'servizi' && campiNote}
+                {campiNote}
               </div>
 
               <div className="flex gap-3 pt-1">
@@ -1049,9 +940,9 @@ export default function Calendario() {
                   Annulla
                 </button>
                 <button onClick={handleSaveApp}
-                  disabled={!formApp.clienteNome || !formApp.data || !formApp.ora || (sezione === 'servizi' && !formApp.servizio)}
+                  disabled={!formApp.clienteNome || !formApp.data || !formApp.ora}
                   className="flex-1 bg-electric-blue text-white font-semibold py-2.5 rounded-lg hover:bg-electric-blue/90 disabled:opacity-40">
-                  {saveLabel[sezione]}
+                  Salva prenotazione
                 </button>
               </div>
             </div>
