@@ -100,8 +100,8 @@ export async function POST(req: Request) {
   // Cerca un conto aperto per questo gruppo o per questo singolo tavolo
   const ordineAperto = await prisma.ordine.findFirst({
     where: gruppoId
-      ? { gruppoId, status: 'aperto' }
-      : { tavoloId, status: 'aperto' },
+      ? { gruppoId, status: { notIn: ['chiuso', 'consegnato'] } }
+      : { tavoloId, status: { notIn: ['chiuso', 'consegnato'] } },
     orderBy: { createdAt: 'desc' },
     include: { righe: true },
   })
