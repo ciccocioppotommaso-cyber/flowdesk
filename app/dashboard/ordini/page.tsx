@@ -41,41 +41,28 @@ interface AppuntamentoOrdine {
   allergie?: string
 }
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; next: string; nextLabel: string }> = {
-  aperto: { label: 'Nuovo', color: 'bg-amber-100 text-amber-700 border-amber-200', next: 'pronto', nextLabel: 'Pronto' },
-  nuovo: { label: 'Nuovo', color: 'bg-amber-100 text-amber-700 border-amber-200', next: 'pronto', nextLabel: 'Pronto' },
-  in_preparazione: { label: 'In preparazione', color: 'bg-blue-100 text-blue-700 border-blue-200', next: 'pronto', nextLabel: 'Pronto' },
-  pronto: { label: 'Pronto', color: 'bg-green-100 text-green-700 border-green-200', next: 'consegnato', nextLabel: 'Consegnato' },
-  consegnato: { label: 'Consegnato', color: 'bg-mist text-ink-navy/50 border-ink-navy/10', next: '', nextLabel: '' },
-  chiuso: { label: 'Chiuso', color: 'bg-mist text-ink-navy/50 border-ink-navy/10', next: '', nextLabel: '' },
-}
-
-const GRUPPI = [
-  { key: 'nuovi', label: 'Nuovi', statuses: ['aperto', 'nuovo', 'in_preparazione'] },
-  { key: 'pronti', label: 'Pronti', statuses: ['pronto'] },
-]
-
-function inferTipoOrdine(servizio?: string): 'ordine' | 'delivery' | null {
+function inferTipoOrdine(servizio?: string): 'delivery' | 'asporto' {
   const s = (servizio ?? '').toLowerCase()
   if (/delivery|consegna|domicilio/.test(s)) return 'delivery'
-  if (/asporto|take away|takeaway|ordine/.test(s)) return 'ordine'
-  return null
+  return 'asporto'
 }
 
-// Giornata di servizio: inizia alle 04:00 e termina alle 04:00 del giorno successivo
-// Gestisce lo scavallamento mezzanotte per ristoranti che chiudono tardi
 function getServiceWindow(): { start: Date; end: Date } {
   const CUTOFF_HOUR = 4
   const now = new Date()
   const serviceDay = new Date(now)
-  if (now.getHours() < CUTOFF_HOUR) {
-    serviceDay.setDate(serviceDay.getDate() - 1)
-  }
+  if (now.getHours() < CUTOFF_HOUR) serviceDay.setDate(serviceDay.getDate() - 1)
   serviceDay.setHours(0, 0, 0, 0)
   const end = new Date(serviceDay)
   end.setDate(end.getDate() + 1)
   end.setHours(CUTOFF_HOUR, 0, 0, 0)
   return { start: serviceDay, end }
+}
+
+const TIPO_THEME = {
+  tavolo:   { border: 'border-amber-300',  bg: 'bg-amber-50',   text: 'text-amber-800'  },
+  asporto:  { border: 'border-violet-300', bg: 'bg-violet-50',  text: 'text-violet-800' },
+  delivery: { border: 'border-teal-300',   bg: 'bg-teal-50',    text: 'text-teal-800'   },
 }
 
 export default function OrdiniPage() {
@@ -85,7 +72,6 @@ export default function OrdiniPage() {
   const [loading, setLoading] = useState(true)
   const [cambioTavolo, setCambioTavolo] = useState<string | null>(null)
   const [confermaElimina, setConfermaElimina] = useState<string | null>(null)
-  const [confermaAnnullaApp, setConfermaAnnullaApp] = useState<string | null>(null)
   const [storicoAperto, setStoricoAperto] = useState(false)
   const [blockAsporto, setBlockAsporto] = useState(false)
   const [blockDelivery, setBlockDelivery] = useState(false)
@@ -134,11 +120,11 @@ export default function OrdiniPage() {
     return () => clearInterval(interval)
   }, [])
 
-  async function avanzaStatus(id: string, status: string) {
+  async function segnaConsegnato(id: string) {
     await fetch(`/api/ordini/${id}`, {
       method: 'PATCH', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status: 'consegnato' }),
     })
     fetchOrdini()
   }
@@ -159,11 +145,11 @@ export default function OrdiniPage() {
     fetchOrdini()
   }
 
-  async function aggiornaStatusAppuntamento(id: string, status: string) {
+  async function segnaAppCompletato(id: string) {
     await fetch(`/api/appuntamenti/${id}`, {
       method: 'PATCH', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status: 'completato' }),
     })
     fetchAppuntamenti()
   }
@@ -173,26 +159,174 @@ export default function OrdiniPage() {
     fetchAppuntamenti()
   }
 
-  // Filtra appuntamenti asporto/delivery della giornata di servizio corrente
   const { start: serviceStart, end: serviceEnd } = getServiceWindow()
   const appOggi = appuntamenti.filter(a => {
+    if (a.status === 'cancellato' || a.status === 'no_show') return false
     const tipo = inferTipoOrdine(a.servizio)
     if (!tipo) return false
-    if (a.status === 'cancellato' || a.status === 'no_show') return false
     const d = new Date(a.data)
     return d >= serviceStart && d < serviceEnd
   })
-  const appInAttesa = appOggi.filter(a => a.status === 'confermato')
-  const appPronti = appOggi.filter(a => a.status === 'pronto')
-  const appAttivi = [...appInAttesa, ...appPronti]
-  const appCompletati = appOggi.filter(a => a.status === 'completato')
 
-  const ordiniTavolo = ordini.filter(o => o.tipo === 'tavolo' || (!o.tipo && o.tavolo !== 'Asporto' && o.tavolo !== 'Delivery'))
-  const ordiniAsportoWeb = ordini.filter(o => o.tipo === 'asporto' || o.tipo === 'delivery' || (!o.tipo && (o.tavolo === 'Asporto' || o.tavolo === 'Delivery')))
-  const ordiniAttivi = ordiniTavolo.filter(o => !['consegnato', 'chiuso'].includes(o.status))
-  const ordiniConsegnati = ordiniTavolo.filter(o => o.status === 'consegnato' || o.status === 'chiuso')
-  const hasTavoloOrdini = ordiniAttivi.length > 0
-  const hasCalendarioOrdini = appOggi.length > 0 || ordiniAsportoWeb.length > 0
+  const isDoneOrdine = (o: Ordine) => ['consegnato', 'chiuso'].includes(o.status)
+  const isDoneApp = (a: AppuntamentoOrdine) => a.status === 'completato'
+
+  const ordiniAttivi = ordini.filter(o => !isDoneOrdine(o))
+  const ordiniStorico = ordini.filter(o => isDoneOrdine(o))
+  const appAttivi = appOggi.filter(a => !isDoneApp(a))
+  const appStorico = appOggi.filter(a => isDoneApp(a))
+
+  const totaleAttivi = ordiniAttivi.length + appAttivi.length
+  const totaleStorico = ordiniStorico.length + appStorico.length
+
+  function OrdineCard({ o }: { o: Ordine }) {
+    const isDone = isDoneOrdine(o)
+    const isTavolo = o.tipo === 'tavolo' || o.tavoloId != null || o.gruppoId != null
+    const tipoKey: keyof typeof TIPO_THEME = isTavolo ? 'tavolo' : o.tipo === 'delivery' ? 'delivery' : 'asporto'
+    const theme = isDone ? null : TIPO_THEME[tipoKey]
+    const ora = new Date(o.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+
+    const tavoloAssegnato = tavoli.find(t => t.id === o.tavoloId)
+    const label = isTavolo
+      ? (o.gruppoId ? o.tavolo : tavoloAssegnato ? (tavoloAssegnato.etichetta ?? `Tavolo ${tavoloAssegnato.numero}`) : `Tavolo ${o.tavolo}`)
+      : (() => { try { return JSON.parse(o.clienteInfo ?? '{}').nome || 'Ordine online' } catch { return 'Ordine online' } })()
+
+    let ci: { nome?: string; telefono?: string; indirizzo?: string; ora?: string; clienteOra?: string } = {}
+    try { ci = JSON.parse(o.clienteInfo ?? '{}') } catch {}
+
+    return (
+      <div className={`bg-white border rounded-xl overflow-hidden shadow-sm ${theme ? theme.border : 'border-ink-navy/10'}`}>
+        {/* Header */}
+        <div className={`px-4 py-3 flex items-center justify-between gap-3 flex-wrap border-b ${theme ? `${theme.bg} ${theme.border}` : 'bg-mist border-ink-navy/10'}`}>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className={`text-sm font-bold truncate ${theme ? theme.text : 'text-ink-navy/50'}`}>{label}</span>
+            {!isTavolo && theme && (
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${tipoKey === 'delivery' ? 'bg-teal-200/60 text-teal-700' : 'bg-violet-200/60 text-violet-700'}`}>
+                {tipoKey === 'delivery' ? 'Delivery' : 'Asporto'}
+              </span>
+            )}
+            <span className={`text-xs ${theme ? theme.text + '/60' : 'text-ink-navy/35'}`}>{ora}</span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <span className={`text-sm ${isDone ? 'text-ink-navy/40' : 'text-ink-navy/70'}`}>€{o.totale.toFixed(2)}</span>
+            {!isDone && (
+              <button onClick={() => segnaConsegnato(o.id)}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-ink-navy text-white hover:bg-ink-navy/80 transition-colors">
+                Pronto
+              </button>
+            )}
+            {isDone && (
+              confermaElimina === o.id ? (
+                <div className="flex items-center gap-1.5">
+                  <button onClick={() => setConfermaElimina(null)} className="text-xs px-2 py-1 rounded-lg border border-ink-navy/15 text-ink-navy/50">No</button>
+                  <button onClick={() => cancellaOrdine(o.id)} className="text-xs px-2 py-1 rounded-lg bg-red-500 text-white font-semibold">Sì</button>
+                </div>
+              ) : (
+                <button onClick={() => setConfermaElimina(o.id)}
+                  className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-red-200 text-red-400 hover:bg-red-50 transition-colors">
+                  Elimina
+                </button>
+              )
+            )}
+          </div>
+        </div>
+
+        {/* Assegna tavolo */}
+        {isTavolo && !isDone && cambioTavolo === o.id && (
+          <div className="px-4 py-2 bg-electric-blue/10 border-b border-electric-blue/15">
+            <p className="text-xs font-medium text-electric-blue mb-2">Assegna tavolo:</p>
+            <div className="flex flex-wrap gap-1.5">
+              {tavoli.map(t => (
+                <button key={t.id} onClick={() => assegnaTavolo(o.id, t.id, t.numero.toString())}
+                  className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${o.tavoloId === t.id ? 'bg-electric-blue text-white' : 'bg-white border border-electric-blue/25 text-electric-blue hover:bg-electric-blue/15'}`}>
+                  {t.etichetta ?? `T${t.numero}`}
+                  <span className="ml-1 text-electric-blue">({t.posti}p)</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Righe */}
+        <div className={`divide-y divide-ink-navy/6 ${isDone ? 'opacity-60' : ''}`}>
+          {isTavolo && tavoli.length > 0 && !isDone && (
+            <div className="px-4 py-2">
+              <button onClick={() => setCambioTavolo(cambioTavolo === o.id ? null : o.id)}
+                className="text-xs text-electric-blue hover:underline">cambia tavolo</button>
+            </div>
+          )}
+          {!isTavolo && (ci.ora || ci.telefono || ci.indirizzo) && (
+            <div className="px-4 py-2 space-y-0.5">
+              {ci.ora && <p className="text-xs text-ink-navy/50 font-medium">Ritiro/consegna: {ci.ora}</p>}
+              {ci.telefono && <p className="text-xs text-ink-navy/50">{ci.telefono}</p>}
+              {ci.indirizzo && <p className="text-xs text-ink-navy/50">{ci.indirizzo}</p>}
+            </div>
+          )}
+          {o.righe.map(r => (
+            <div key={r.id} className="flex items-center justify-between px-4 py-2.5 gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-xs font-bold text-ink-navy w-5 shrink-0 text-center">{r.quantita}×</span>
+                <span className="text-sm font-bold text-ink-navy truncate">{r.nome}</span>
+                {r.note && <span className="text-xs text-ink-navy/35 truncate">({r.note})</span>}
+              </div>
+              <span className="text-sm text-ink-navy/50 shrink-0">€{(r.prezzo * r.quantita).toFixed(2)}</span>
+            </div>
+          ))}
+          {o.righe.length === 0 && <p className="px-4 py-3 text-sm text-ink-navy/30">Nessuna voce</p>}
+          {o.note && <p className="px-4 py-2 text-xs text-ink-navy/35 italic">{o.note}</p>}
+        </div>
+      </div>
+    )
+  }
+
+  function AppCard({ a }: { a: AppuntamentoOrdine }) {
+    const isDone = isDoneApp(a)
+    const tipoKey: keyof typeof TIPO_THEME = inferTipoOrdine(a.servizio) === 'delivery' ? 'delivery' : 'asporto'
+    const theme = isDone ? null : TIPO_THEME[tipoKey]
+    const ora = new Date(a.data).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+    const [desc] = (a.note ?? '').split('\n')
+    const nota = (desc ?? '').replace(/^Da richiesta #\d+$/, '').trim()
+
+    return (
+      <div className={`bg-white border rounded-xl overflow-hidden shadow-sm ${theme ? theme.border : 'border-ink-navy/10'}`}>
+        <div className={`px-4 py-3 flex items-center justify-between gap-3 border-b ${theme ? `${theme.bg} ${theme.border}` : 'bg-mist border-ink-navy/10'}`}>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className={`text-sm font-bold truncate ${theme ? theme.text : 'text-ink-navy/50'}`}>{a.clienteNome || 'Cliente'}</span>
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${tipoKey === 'delivery' ? 'bg-teal-200/60 text-teal-700' : 'bg-violet-200/60 text-violet-700'}`}>
+              {tipoKey === 'delivery' ? 'Delivery' : 'Asporto'}
+            </span>
+            <span className={`text-xs ${theme ? theme.text + '/60' : 'text-ink-navy/35'}`}>{ora}</span>
+          </div>
+          {!isDone && (
+            <button onClick={() => segnaAppCompletato(a.id)}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-ink-navy text-white hover:bg-ink-navy/80 transition-colors shrink-0">
+              Pronto
+            </button>
+          )}
+          {isDone && (
+            <button onClick={() => eliminaAppuntamento(a.id)}
+              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-red-200 text-red-400 hover:bg-red-50 transition-colors shrink-0">
+              Elimina
+            </button>
+          )}
+        </div>
+        {nota && (
+          <div className={`px-4 py-3 ${isDone ? 'opacity-60' : ''}`}>
+            <p className="text-sm font-bold text-ink-navy">{nota}</p>
+          </div>
+        )}
+        {a.allergie && a.allergie.toLowerCase() !== 'nessuna' && (
+          <div className="px-4 pb-3">
+            <p className="text-xs text-red-500">{a.allergie}</p>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (loading) return <p className="text-ink-navy/35 text-sm p-8">Caricamento...</p>
+
+  const vuoto = totaleAttivi === 0 && totaleStorico === 0
 
   return (
     <div className="space-y-6">
@@ -200,9 +334,7 @@ export default function OrdiniPage() {
         <div>
           <h1 className="text-2xl font-bold text-ink-navy">Ordini</h1>
           <p className="text-ink-navy/50 text-sm mt-0.5">
-            {ordiniAttivi.length > 0 || appAttivi.length > 0
-              ? `${ordiniAttivi.length + appAttivi.length} ordini attivi`
-              : 'Nessun ordine attivo'} · aggiornamento ogni 15s
+            {totaleAttivi > 0 ? `${totaleAttivi} ordini attivi` : 'Nessun ordine attivo'} · aggiornamento ogni 15s
           </p>
         </div>
         <button onClick={() => { fetchOrdini(); fetchAppuntamenti() }}
@@ -222,13 +354,8 @@ export default function OrdiniPage() {
             const bloccato = campo === 'blockAsporto' ? blockAsporto : blockDelivery
             return (
               <div key={campo} className="flex items-center gap-2 select-none">
-                <span className={`text-sm font-medium ${bloccato ? 'text-red-500' : 'text-ink-navy/60'}`}>
-                  {label}
-                </span>
-                <button
-                  type="button"
-                  disabled={savingBlocco}
-                  onClick={() => toggleBlocco(campo, !bloccato)}
+                <span className={`text-sm font-medium ${bloccato ? 'text-red-500' : 'text-ink-navy/60'}`}>{label}</span>
+                <button type="button" disabled={savingBlocco} onClick={() => toggleBlocco(campo, !bloccato)}
                   className={`relative w-10 h-5 rounded-full transition-colors focus:outline-none disabled:opacity-50 ${bloccato ? 'bg-red-400' : 'bg-green-400'}`}>
                   <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform block ${bloccato ? 'translate-x-5' : 'translate-x-0.5'}`} />
                 </button>
@@ -241,9 +368,7 @@ export default function OrdiniPage() {
         </div>
       </div>
 
-      {loading ? (
-        <p className="text-ink-navy/35 text-sm">Caricamento...</p>
-      ) : !hasTavoloOrdini && !hasCalendarioOrdini && ordiniConsegnati.length === 0 ? (
+      {vuoto ? (
         <div className="bg-white rounded-2xl border border-ink-navy/10 p-20 text-center shadow-sm">
           <div className="w-12 h-12 rounded-xl bg-electric-blue/10 text-electric-blue flex items-center justify-center p-3 mx-auto mb-4">
             <IconReceipt />
@@ -254,414 +379,41 @@ export default function OrdiniPage() {
       ) : (
         <div className="space-y-6">
 
-          {/* ── ORDINI AL TAVOLO (menù digitale) ── */}
-          {hasTavoloOrdini && (
-            <div className="rounded-2xl border border-ink-navy/10 overflow-hidden shadow-sm">
-              <div className="bg-amber-50 border-b border-amber-200 px-5 py-3 flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-amber-400" />
-                <h2 className="text-sm font-bold text-amber-800 uppercase tracking-wider">Ordini al tavolo</h2>
-                <span className="text-xs font-medium bg-amber-100 text-amber-600 border border-amber-200 px-2 py-0.5 rounded-full">menù digitale</span>
-              </div>
-              <div className="p-5 space-y-8">
-                {GRUPPI.map(g => {
-                  const lista = ordiniTavolo.filter(o => g.statuses.includes(o.status))
-                  if (lista.length === 0) return null
-                  return (
-                    <div key={g.key}>
-                      <h3 className="text-base font-bold text-ink-navy mb-3 flex items-center gap-2">
-                        {g.label}
-                        <span className="text-xs font-semibold bg-mist text-ink-navy/60 px-2 py-0.5 rounded-full">{lista.length}</span>
-                      </h3>
-                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        {lista.map(o => {
-                          const cfg = STATUS_CONFIG[o.status] ?? STATUS_CONFIG.nuovo
-                          const ora = new Date(o.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-                          const tavoloAssegnato = tavoli.find(t => t.id === o.tavoloId)
-                          const labelTavolo = o.gruppoId
-                            ? o.tavolo  // già "T2+T3" impostato al momento dell'ordine
-                            : tavoloAssegnato
-                              ? (tavoloAssegnato.etichetta ?? `Tavolo ${tavoloAssegnato.numero}`)
-                              : `Tavolo ${o.tavolo}`
-                          return (
-                            <div key={o.id} className={`relative bg-white rounded-2xl border shadow-sm overflow-hidden ${o.status === 'nuovo' ? 'border-amber-300 ring-2 ring-amber-200' : 'border-ink-navy/10'}`}>
-                              <div className="flex items-center justify-between px-4 py-3 border-b border-ink-navy/8">
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <p className="font-bold text-ink-navy">{labelTavolo}</p>
-                                    {tavoli.length > 0 && (
-                                      <button onClick={() => setCambioTavolo(cambioTavolo === o.id ? null : o.id)}
-                                        className="text-xs text-electric-blue hover:text-electric-blue underline">
-                                        cambia
-                                      </button>
-                                    )}
-                                  </div>
-                                  <p className="text-xs text-ink-navy/35">{ora}</p>
-                                </div>
-                                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${cfg.color}`}>{cfg.label}</span>
-                              </div>
-                              {cambioTavolo === o.id && (
-                                <div className="px-4 py-2 bg-electric-blue/10 border-b border-electric-blue/15">
-                                  <p className="text-xs font-medium text-electric-blue mb-2">Assegna tavolo:</p>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {tavoli.map(t => (
-                                      <button key={t.id}
-                                        onClick={() => assegnaTavolo(o.id, t.id, t.numero.toString())}
-                                        className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${o.tavoloId === t.id ? 'bg-electric-blue text-white' : 'bg-white border border-electric-blue/25 text-electric-blue hover:bg-electric-blue/15'}`}>
-                                        {t.etichetta ?? `T${t.numero}`}
-                                        <span className="ml-1 text-electric-blue">({t.posti}p)</span>
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                              <div className="px-4 py-3 space-y-1.5">
-                                {o.righe.map(r => (
-                                  <div key={r.id} className="flex justify-between text-sm">
-                                    <span className="text-ink-navy/70">{r.quantita}× {r.nome}</span>
-                                    <span className="text-ink-navy/50 font-medium">€{(r.prezzo * r.quantita).toFixed(2)}</span>
-                                  </div>
-                                ))}
-                                {o.note && <p className="text-xs text-ink-navy/35 pt-1 italic">{o.note}</p>}
-                              </div>
-                              <div className="px-4 py-3 border-t border-ink-navy/8 flex items-center justify-between">
-                                <p className="font-bold text-ink-navy">€{o.totale.toFixed(2)}</p>
-                                <div className="flex gap-2">
-                                  <button onClick={() => setConfermaElimina(o.id)}
-                                    className="text-xs px-3 py-1.5 rounded-lg border border-ink-navy/10 text-ink-navy/40 hover:border-red-200 hover:text-red-500 hover:bg-red-50 transition-colors font-medium">
-                                    Elimina
-                                  </button>
-                                  {confermaElimina === o.id && (
-                                    <div className="absolute bottom-14 right-4 z-10 bg-white border border-red-200 rounded-xl shadow-lg p-3 w-52">
-                                      <p className="text-xs text-ink-navy/70 font-medium mb-2">Annullare questo ordine?</p>
-                                      <div className="flex gap-2">
-                                        <button onClick={() => setConfermaElimina(null)}
-                                          className="flex-1 text-xs py-1.5 rounded-lg border border-ink-navy/10 text-ink-navy/50 hover:bg-mist">No</button>
-                                        <button onClick={() => cancellaOrdine(o.id)}
-                                          className="flex-1 text-xs py-1.5 rounded-lg bg-red-500 text-white font-semibold hover:bg-red-600">Sì, elimina</button>
-                                      </div>
-                                    </div>
-                                  )}
-                                  {cfg.next && (
-                                    <button onClick={() => avanzaStatus(o.id, cfg.next)}
-                                      className="text-xs px-3 py-1.5 rounded-lg bg-electric-blue text-white font-semibold hover:bg-electric-blue/90 transition-colors">
-                                      {cfg.nextLabel}
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )
-                })}
+          {/* Ordini attivi */}
+          {totaleAttivi > 0 && (
+            <div className="space-y-3">
+              <h2 className="text-sm font-semibold text-ink-navy/50 uppercase tracking-wider flex items-center gap-2">
+                In corso
+                <span className="bg-electric-blue text-white text-xs font-bold px-1.5 py-0.5 rounded-full">{totaleAttivi}</span>
+              </h2>
+              <div className="space-y-3">
+                {ordiniAttivi.map(o => <OrdineCard key={o.id} o={o} />)}
+                {appAttivi.map(a => <AppCard key={a.id} a={a} />)}
               </div>
             </div>
           )}
 
-          {/* ── ASPORTO & DELIVERY ── */}
-          {hasCalendarioOrdini && (() => {
-            // Unifica ordini web (Ordine) e dal calendario (Appuntamento)
-            type ItemApp = { kind: 'app'; id: string; isDelivery: boolean; label: string; ora: string; note: string }
-            type ItemOrdine = { kind: 'ordine'; id: string; isDelivery: boolean; righe: RigaOrdine[]; totale: number; note: string | null; ora: string; clienteNome: string | null; clienteTelefono: string | null; clienteIndirizzo: string | null; clienteOra: string | null }
-            type Item = ItemApp | ItemOrdine
-
-            const toApp = (a: AppuntamentoOrdine): ItemApp => {
-              const isDelivery = inferTipoOrdine(a.servizio) === 'delivery'
-              const ora = new Date(a.data).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-              const [desc] = (a.note ?? '').split('\n')
-              const note = (desc ?? '').replace(/^Da richiesta #\d+$/, '').trim()
-              return { kind: 'app', id: a.id, isDelivery, label: a.clienteNome || 'Cliente', ora, note }
-            }
-            const toOrdine = (o: Ordine): ItemOrdine => {
-              let ci: { nome?: string; telefono?: string; indirizzo?: string; ora?: string } = {}
-              try { ci = JSON.parse(o.clienteInfo ?? '{}') } catch {}
-              return {
-                kind: 'ordine', id: o.id, isDelivery: o.tipo === 'delivery',
-                righe: o.righe, totale: o.totale, note: o.note,
-                ora: new Date(o.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
-                clienteNome: ci.nome ?? null,
-                clienteTelefono: ci.telefono ?? null,
-                clienteIndirizzo: ci.indirizzo ?? null,
-                clienteOra: ci.ora ?? null,
-              }
-            }
-
-            const daPrepItems: Item[] = [
-              ...appInAttesa.map(toApp),
-              ...ordiniAsportoWeb.filter(o => ['nuovo', 'in_preparazione'].includes(o.status)).map(toOrdine),
-            ]
-            const prontiItems: Item[] = [
-              ...appPronti.map(toApp),
-              ...ordiniAsportoWeb.filter(o => o.status === 'pronto').map(toOrdine),
-            ]
-            const evasiItems: Item[] = [
-              ...appCompletati.map(toApp),
-              ...ordiniAsportoWeb.filter(o => o.status === 'consegnato').map(toOrdine),
-            ]
-            const CardFooter = ({ item, stepLabel, stepColor, onStep }: {
-              item: Item; stepLabel?: string; stepColor?: string; onStep?: () => void
-            }) => (
-              <div className="px-4 py-3 border-t border-ink-navy/8 flex items-center justify-between gap-2">
-                {confermaAnnullaApp === item.id ? (
-                  <div className="flex items-center gap-2 w-full">
-                    <span className="text-xs text-ink-navy/50 flex-1">Eliminare?</span>
-                    <button onClick={() => setConfermaAnnullaApp(null)} className="text-xs px-2.5 py-1.5 rounded-lg border border-ink-navy/15 text-ink-navy/50 hover:bg-mist">No</button>
-                    <button onClick={() => {
-                      item.kind === 'app' ? eliminaAppuntamento(item.id) : cancellaOrdine(item.id)
-                      setConfermaAnnullaApp(null)
-                    }} className="text-xs px-2.5 py-1.5 rounded-lg bg-red-500 text-white font-semibold hover:bg-red-600">Sì</button>
-                  </div>
-                ) : (
-                  <>
-                    <button onClick={() => setConfermaAnnullaApp(item.id)} className="text-xs px-2.5 py-1.5 rounded-lg text-red-400 hover:bg-red-50 transition-colors">Elimina</button>
-                    {onStep && stepLabel && (
-                      <button onClick={onStep} className={`text-xs px-3 py-1.5 rounded-lg text-white font-semibold transition-colors ${stepColor}`}>
-                        {stepLabel}
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            )
-
-            const renderCard = (item: Item, ringClass: string, badgeEl: React.ReactNode, stepLabel?: string, stepColor?: string, onStep?: () => void, dimmed = false) => {
-              const nome = item.kind === 'app' ? item.label : (item.clienteNome || 'Ordine online')
-              const tipoBadge = (
-                <span className={`self-start text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${item.isDelivery ? 'bg-teal-100 text-teal-700' : 'bg-violet-100 text-violet-700'}`}>
-                  {item.isDelivery ? 'Delivery' : 'Asporto'}
+          {/* Storico di oggi */}
+          {totaleStorico > 0 && (
+            <div>
+              <button onClick={() => setStoricoAperto(v => !v)}
+                className="w-full flex items-center gap-3 text-left group py-2">
+                <div className="h-px flex-1 bg-ink-navy/8" />
+                <span className="text-xs font-semibold text-ink-navy/35 uppercase tracking-wider group-hover:text-ink-navy/60 transition-colors flex items-center gap-1.5">
+                  Pronti questa serata
+                  <span className="bg-mist text-ink-navy/40 px-2 py-0.5 rounded-full normal-case tracking-normal">{totaleStorico}</span>
+                  <span className="text-ink-navy/30">{storicoAperto ? '▲' : '▼'}</span>
                 </span>
-              )
-              return (
-                <div key={item.id} className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${ringClass} ${dimmed ? 'opacity-60' : ''}`}>
-                  {/* Header: tipo badge a sinistra, status badge a destra */}
-                  <div className="px-4 py-3 border-b border-ink-navy/8">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        {tipoBadge}
-                        <p className="font-bold text-ink-navy truncate">{nome}</p>
-                      </div>
-                      <div className="shrink-0">{badgeEl}</div>
-                    </div>
-                    <p className="text-xs text-ink-navy/35 mt-1">{item.ora}</p>
-                  </div>
-                  <div className="px-4 py-3 space-y-1.5">
-                    {item.kind === 'app'
-                      ? <>{item.note && <p className="text-sm text-ink-navy/70">{item.note}</p>}</>
-                      : <>
-                          {item.clienteOra && <p className="text-xs text-ink-navy/50 font-medium">Ritiro/consegna: {item.clienteOra}</p>}
-                          {item.clienteTelefono && <p className="text-xs text-ink-navy/50">{item.clienteTelefono}</p>}
-                          {item.clienteIndirizzo && <p className="text-xs text-ink-navy/50">{item.clienteIndirizzo}</p>}
-                          {item.righe.map(r => (
-                            <div key={r.id} className="flex justify-between text-sm">
-                              <span className="text-ink-navy/70">{r.quantita}× {r.nome}</span>
-                              <span className="text-ink-navy/50 font-medium">€{(r.prezzo * r.quantita).toFixed(2)}</span>
-                            </div>
-                          ))}
-                          {item.note && <p className="text-xs text-ink-navy/35 pt-1 italic">{item.note}</p>}
-                          <p className="text-sm font-bold text-ink-navy pt-1">€{item.totale.toFixed(2)}</p>
-                        </>
-                    }
-                  </div>
-                  <CardFooter item={item} stepLabel={stepLabel} stepColor={stepColor} onStep={onStep} />
+                <div className="h-px flex-1 bg-ink-navy/8" />
+              </button>
+              {storicoAperto && (
+                <div className="mt-3 space-y-3">
+                  {ordiniStorico.map(o => <OrdineCard key={o.id} o={o} />)}
+                  {appStorico.map(a => <AppCard key={a.id} a={a} />)}
                 </div>
-              )
-            }
-
-            return (
-              <div className="rounded-2xl border border-ink-navy/10 overflow-hidden shadow-sm">
-                <div className="bg-violet-50 border-b border-violet-200 px-5 py-3 flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-violet-400" />
-                  <h2 className="text-sm font-bold text-violet-800 uppercase tracking-wider">Asporto & Delivery</h2>
-                </div>
-                <div className="p-5 space-y-6">
-                  {daPrepItems.length > 0 && (
-                    <div>
-                      <h3 className="text-base font-bold text-ink-navy mb-3 flex items-center gap-2">
-                        Da preparare <span className="text-xs font-semibold bg-mist text-ink-navy/60 px-2 py-0.5 rounded-full">{daPrepItems.length}</span>
-                      </h3>
-                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        {daPrepItems.map(item => renderCard(item,
-                          'border-amber-200 ring-2 ring-amber-100',
-                          <span className="text-xs font-semibold px-2.5 py-1 rounded-full border bg-amber-100 text-amber-700 border-amber-200">Da preparare</span>,
-                          'Pronto', 'bg-electric-blue hover:bg-electric-blue/90',
-                          () => item.kind === 'app' ? aggiornaStatusAppuntamento(item.id, 'pronto') : avanzaStatus(item.id, 'pronto'),
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {prontiItems.length > 0 && (
-                    <div>
-                      <h3 className="text-base font-bold text-ink-navy mb-3 flex items-center gap-2">
-                        Pronti <span className="text-xs font-semibold bg-mist text-ink-navy/60 px-2 py-0.5 rounded-full">{prontiItems.length}</span>
-                      </h3>
-                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        {prontiItems.map(item => {
-                          const stepLabel = item.kind === 'app' ? (item.isDelivery ? 'Consegnato' : 'Ritirato') : 'Consegnato'
-                          return renderCard(item,
-                            'border-green-200 ring-2 ring-green-100',
-                            <span className="text-xs font-semibold px-2.5 py-1 rounded-full border bg-green-100 text-green-700 border-green-200">Pronto</span>,
-                            stepLabel, 'bg-green-600 hover:bg-green-700',
-                            () => item.kind === 'app' ? aggiornaStatusAppuntamento(item.id, 'completato') : avanzaStatus(item.id, 'consegnato'),
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-
-          })()}
-
-          {/* ── STORICO DI OGGI (collassabile) ── */}
-          {(() => {
-            const asportoSection = (() => {
-              type ItemApp = { kind: 'app'; id: string; isDelivery: boolean; label: string; ora: string; note: string }
-              type ItemOrdine = { kind: 'ordine'; id: string; isDelivery: boolean; righe: RigaOrdine[]; totale: number; note: string | null; ora: string; clienteNome: string | null; clienteTelefono: string | null; clienteIndirizzo: string | null; clienteOra: string | null }
-              type Item = ItemApp | ItemOrdine
-              const toApp = (a: AppuntamentoOrdine): ItemApp => {
-                const isDelivery = inferTipoOrdine(a.servizio) === 'delivery'
-                const ora = new Date(a.data).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-                const [desc] = (a.note ?? '').split('\n')
-                return { kind: 'app', id: a.id, isDelivery, label: a.clienteNome || 'Cliente', ora, note: (desc ?? '').replace(/^Da richiesta #\d+$/, '').trim() }
-              }
-              const toOrdineEvaso = (o: Ordine): ItemOrdine => {
-                let ci: { nome?: string; telefono?: string; indirizzo?: string; ora?: string } = {}
-                try { ci = JSON.parse(o.clienteInfo ?? '{}') } catch {}
-                return {
-                  kind: 'ordine', id: o.id, isDelivery: o.tipo === 'delivery',
-                  righe: o.righe, totale: o.totale, note: o.note,
-                  ora: new Date(o.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
-                  clienteNome: ci.nome ?? null, clienteTelefono: ci.telefono ?? null,
-                  clienteIndirizzo: ci.indirizzo ?? null, clienteOra: ci.ora ?? null,
-                }
-              }
-              return {
-                evasiItems: [
-                  ...appCompletati.map(toApp),
-                  ...ordiniAsportoWeb.filter(o => o.status === 'consegnato').map(toOrdineEvaso),
-                ] as Item[],
-              }
-            })()
-
-            const totaleStorico = ordiniConsegnati.length + asportoSection.evasiItems.length
-            if (totaleStorico === 0) return null
-
-            return (
-              <div>
-                <button
-                  onClick={() => setStoricoAperto(v => !v)}
-                  className="w-full flex items-center gap-3 text-left group"
-                >
-                  <div className="h-px flex-1 bg-ink-navy/8" />
-                  <span className="text-xs font-semibold text-ink-navy/35 uppercase tracking-wider group-hover:text-ink-navy/60 transition-colors flex items-center gap-1.5">
-                    Storico di oggi
-                    <span className="bg-mist text-ink-navy/40 px-2 py-0.5 rounded-full normal-case tracking-normal">{totaleStorico}</span>
-                    <span className="text-ink-navy/30">{storicoAperto ? '▲' : '▼'}</span>
-                  </span>
-                  <div className="h-px flex-1 bg-ink-navy/8" />
-                </button>
-
-                {storicoAperto && (
-                  <div className="mt-4 space-y-4">
-
-                    {/* Storico tavolo */}
-                    {ordiniConsegnati.length > 0 && (
-                      <div className="rounded-2xl border border-ink-navy/10 overflow-hidden shadow-sm opacity-70">
-                        <div className="bg-amber-50 border-b border-amber-200 px-5 py-2.5 flex items-center gap-3">
-                          <div className="w-2 h-2 rounded-full bg-amber-400" />
-                          <p className="text-xs font-bold text-amber-800 uppercase tracking-wider">Tavolo · Consegnati</p>
-                          <span className="text-xs font-medium bg-amber-100 text-amber-600 border border-amber-200 px-2 py-0.5 rounded-full">{ordiniConsegnati.length}</span>
-                        </div>
-                        <div className="p-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                          {ordiniConsegnati.map(o => {
-                            const ora = new Date(o.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-                            const tavoloAssegnato = tavoli.find(t => t.id === o.tavoloId)
-                            const labelTavolo = tavoloAssegnato ? (tavoloAssegnato.etichetta ?? `Tavolo ${tavoloAssegnato.numero}`) : `Tavolo ${o.tavolo}`
-                            return (
-                              <div key={o.id} className="bg-white rounded-xl border border-ink-navy/10 shadow-sm overflow-hidden">
-                                <div className="flex items-start justify-between px-4 py-3 border-b border-ink-navy/8">
-                                  <div>
-                                    <p className="font-bold text-ink-navy">{labelTavolo}</p>
-                                    <p className="text-xs text-ink-navy/35 mt-0.5">{ora}</p>
-                                  </div>
-                                  <span className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full border bg-mist text-ink-navy/50 border-ink-navy/10">Consegnato</span>
-                                </div>
-                                <div className="px-4 py-3 space-y-1.5">
-                                  {o.righe.map(r => (
-                                    <div key={r.id} className="flex justify-between text-sm">
-                                      <span className="text-ink-navy/50">{r.quantita}× {r.nome}</span>
-                                      <span className="text-ink-navy/35 font-medium">€{(r.prezzo * r.quantita).toFixed(2)}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                                <div className="px-4 py-3 border-t border-ink-navy/8 flex items-center justify-between">
-                                  <p className="font-bold text-ink-navy/50">€{o.totale.toFixed(2)}</p>
-                                  <button onClick={() => cancellaOrdine(o.id)} className="text-xs px-2.5 py-1.5 rounded-lg text-red-400 hover:bg-red-50 transition-colors">Elimina</button>
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Storico asporto/delivery */}
-                    {asportoSection.evasiItems.length > 0 && (
-                      <div className="rounded-2xl border border-ink-navy/10 overflow-hidden shadow-sm opacity-70">
-                        <div className="bg-violet-50 border-b border-violet-200 px-5 py-2.5 flex items-center gap-3">
-                          <div className="w-2 h-2 rounded-full bg-violet-400" />
-                          <p className="text-xs font-bold text-violet-800 uppercase tracking-wider">Asporto & Delivery · Completati</p>
-                          <span className="text-xs font-medium bg-violet-100 text-violet-600 border border-violet-200 px-2 py-0.5 rounded-full">{asportoSection.evasiItems.length}</span>
-                        </div>
-                        <div className="p-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                          {asportoSection.evasiItems.map(item => {
-                            const nome = item.kind === 'app' ? item.label : (item.clienteNome || 'Ordine online')
-                            return (
-                              <div key={item.id} className="bg-white rounded-xl border border-ink-navy/10 shadow-sm overflow-hidden">
-                                <div className="px-4 py-3 border-b border-ink-navy/8">
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${item.isDelivery ? 'bg-teal-100 text-teal-700' : 'bg-violet-100 text-violet-700'}`}>
-                                        {item.isDelivery ? 'Delivery' : 'Asporto'}
-                                      </span>
-                                      <p className="font-bold text-ink-navy truncate">{nome}</p>
-                                    </div>
-                                    <span className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full border bg-mist text-ink-navy/50 border-ink-navy/10">Completato</span>
-                                  </div>
-                                  <p className="text-xs text-ink-navy/35 mt-1">{item.ora}</p>
-                                </div>
-                                <div className="px-4 py-3 space-y-1.5">
-                                  {item.kind === 'app'
-                                    ? <>{item.note && <p className="text-sm text-ink-navy/50">{item.note}</p>}</>
-                                    : <>{item.righe.map(r => (
-                                        <div key={r.id} className="flex justify-between text-sm">
-                                          <span className="text-ink-navy/50">{r.quantita}× {r.nome}</span>
-                                          <span className="text-ink-navy/35 font-medium">€{(r.prezzo * r.quantita).toFixed(2)}</span>
-                                        </div>
-                                      ))}
-                                      <p className="text-sm font-bold text-ink-navy/50 pt-1">€{item.totale.toFixed(2)}</p>
-                                    </>
-                                  }
-                                </div>
-                                <div className="px-4 py-3 border-t border-ink-navy/8 flex justify-end">
-                                  <button onClick={() => {
-                                    item.kind === 'app' ? eliminaAppuntamento(item.id) : cancellaOrdine(item.id)
-                                  }} className="text-xs px-2.5 py-1.5 rounded-lg text-red-400 hover:bg-red-50 transition-colors">Elimina</button>
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })()}
+              )}
+            </div>
+          )}
 
         </div>
       )}

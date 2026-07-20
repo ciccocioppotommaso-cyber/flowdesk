@@ -281,6 +281,7 @@ export default function ContiPage() {
   const [loading, setLoading] = useState(true)
   const [chiusiAperti, setChiusiAperti] = useState(false)
   const [dataFiltro, setDataFiltro] = useState(todayKey)
+  const [filtroTipo, setFiltroTipo] = useState<'tutti' | 'tavolo' | 'asporto' | 'delivery'>('tutti')
   const [calOpen, setCalOpen] = useState(false)
   const [modificando, setModificando] = useState<Ordine | null>(null)
 
@@ -304,8 +305,14 @@ export default function ContiPage() {
   const ordini = isOggi ? tutti : tutti.filter(o => getSerataKey(o.createdAt) === dataFiltro)
   const isTavolo = (o: Ordine) => o.tipo === 'tavolo' || o.tavoloId != null || o.gruppoId != null
   const isDone = (o: Ordine) => o.status === 'chiuso' || o.status === 'consegnato'
-  const aperti = ordini.filter(o => !isDone(o))
-  const chiusi = ordini.filter(o => isDone(o))
+  const matchesFiltro = (o: Ordine) => {
+    if (filtroTipo === 'tutti') return true
+    if (filtroTipo === 'tavolo') return isTavolo(o)
+    if (filtroTipo === 'delivery') return o.tipo === 'delivery'
+    return !isTavolo(o) && o.tipo !== 'delivery' // asporto
+  }
+  const aperti = ordini.filter(o => !isDone(o) && matchesFiltro(o))
+  const chiusi = ordini.filter(o => isDone(o) && matchesFiltro(o))
   const totaleAperti = aperti.reduce((s, o) => s + o.totale, 0)
   const totaleChiusi = chiusi.reduce((s, o) => s + o.totale, 0)
 
@@ -471,6 +478,16 @@ export default function ContiPage() {
             disabled={dataFiltro >= todayKey()}
             className="w-8 h-8 flex items-center justify-center rounded-lg border border-ink-navy/15 text-ink-navy/50 hover:bg-mist disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm">›</button>
         </div>
+      </div>
+
+      {/* Filtro tipo */}
+      <div className="flex gap-1 bg-mist rounded-xl p-1 w-fit">
+        {(['tutti', 'tavolo', 'asporto', 'delivery'] as const).map(t => (
+          <button key={t} onClick={() => setFiltroTipo(t)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors capitalize ${filtroTipo === t ? 'bg-white text-ink-navy shadow-sm' : 'text-ink-navy/50 hover:text-ink-navy/70'}`}>
+            {t === 'tutti' ? 'Tutti' : t.charAt(0).toUpperCase() + t.slice(1)}
+          </button>
+        ))}
       </div>
 
       {/* Aperti */}
