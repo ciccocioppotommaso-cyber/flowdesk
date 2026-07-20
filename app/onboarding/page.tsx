@@ -52,7 +52,7 @@ export default function Onboarding() {
           objectives: data.objectives,
         }),
       })
-      router.push('/dashboard')
+      router.push('/dashboard/check')
     } catch {
       setLoading(false)
     }

@@ -14,6 +14,7 @@ const VERTICALI = [
     titleAccent: 'ordinato.',
     description: 'Tavoli, menu digitale, ordini QR, prenotazioni, staff e analytics. Il cliente ordina dal tavolo, tu ricevi tutto già organizzato.',
     live: true,
+    href: '/food',
   },
   {
     id: 'care',
@@ -49,11 +50,6 @@ export default function Home() {
     obs.observe(el)
     return () => obs.disconnect()
   }, [])
-
-  function scegliFood() {
-    document.cookie = `verticale_pending=food; path=/; max-age=600`
-    window.location.href = '/sign-up'
-  }
 
   return (
     <main className="min-h-screen bg-mist overflow-hidden">
@@ -118,13 +114,10 @@ export default function Home() {
                 <p className="mt-4 text-sm text-white/55 leading-relaxed flex-1">{v.description}</p>
 
                 {v.live ? (
-                  <button
-                    onClick={scegliFood}
-                    className="mt-6 inline-flex items-center justify-center gap-2 bg-zest-lime text-ink-navy font-bold text-sm px-5 py-2.5 rounded-lg hover:bg-zest-lime/90 transition-colors w-fit"
-                  >
-                    Inizia gratis
+                  <span className="mt-6 inline-flex items-center justify-center gap-2 bg-zest-lime text-ink-navy font-bold text-sm px-5 py-2.5 rounded-lg group-hover:bg-zest-lime/90 transition-colors w-fit">
+                    Scopri Flowest Food
                     <span className="w-4 h-4"><IconArrowRight /></span>
-                  </button>
+                  </span>
                 ) : (
                   <span className="animate-pulse-soft mt-6 inline-flex items-center gap-1.5 font-mono text-xs uppercase tracking-wide text-zest-lime/80 border border-zest-lime/25 rounded-lg px-3 py-1.5 w-fit">
                     In arrivo
@@ -133,10 +126,8 @@ export default function Home() {
               </div>
             )
 
-            return v.live ? (
-              <div key={v.id}>{inner}</div>
-            ) : (
-              <Link key={v.id} href={v.href!}>{inner}</Link>
+            return (
+              <Link key={v.id} href={v.href!} className="group">{inner}</Link>
             )
           })}
         </div>

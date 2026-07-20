@@ -12,6 +12,7 @@ export default async function DashboardCheck() {
   const verticalePending = cookieStore.get('verticale_pending')?.value as 'food' | 'care' | undefined
 
   const user = await prisma.user.findUnique({ where: { clerkId: userId } })
+  let verticale: 'food' | 'care' = user?.verticale === 'care' ? 'care' : 'food'
 
   if (!user) {
     const createdAt = clerkUser?.createdAt ?? 0
@@ -28,12 +29,14 @@ export default async function DashboardCheck() {
         ...(verticalePending ? { verticale: verticalePending } : {}),
       },
     })
+    if (verticalePending) verticale = verticalePending
   } else if (verticalePending) {
     await prisma.user.update({
       where: { clerkId: userId! },
       data: { verticale: verticalePending },
     })
+    verticale = verticalePending
   }
 
-  redirect('/dashboard')
+  redirect(verticale === 'care' ? '/care/dashboard' : '/food/dashboard')
 }
