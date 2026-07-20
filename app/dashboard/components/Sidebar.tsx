@@ -16,7 +16,7 @@ const navFood = [
       { label: 'Tavoli & QR', href: '/dashboard/tavoli', Icon: IconTable },
       { label: 'Conti', href: '/dashboard/conti', Icon: IconCash },
       { label: 'Ordini', href: '/dashboard/ordini', Icon: IconReceipt },
-      { label: 'Richieste', href: '/dashboard/clienti/preventivi', Icon: IconClipboard },
+      { label: 'Prenotazioni tavoli', href: '/dashboard/clienti/preventivi', Icon: IconClipboard },
       { label: 'Calendario', href: '/dashboard/clienti/calendario', Icon: IconCalendar },
     ],
   },

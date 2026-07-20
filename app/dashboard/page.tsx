@@ -4,7 +4,7 @@ import { IconUsers, IconClipboard, IconChat, IconCalendar, IconFork } from '../c
 
 const stats: { label: string; value: string; Icon: ComponentType<{ className?: string }>; href: string }[] = [
   { label: 'Lead questo mese', value: '—', Icon: IconUsers, href: '/dashboard/clienti/crm' },
-  { label: 'Richieste in attesa', value: '—', Icon: IconClipboard, href: '/dashboard/clienti/preventivi' },
+  { label: 'Prenotazioni da verificare', value: '—', Icon: IconClipboard, href: '/dashboard/clienti/preventivi' },
   { label: 'Messaggi non letti', value: '—', Icon: IconChat, href: '/dashboard/clienti/inbox' },
   { label: 'Prenotazioni', value: '—', Icon: IconCalendar, href: '/dashboard/clienti/calendario' },
 ]

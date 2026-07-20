@@ -188,6 +188,89 @@ function ModificaModal({ ordine, onClose, onOrdineUpdated }: {
   )
 }
 
+// ── Mini calendario ─────────────────────────────────────────────────────────
+function MiniCalendar({ value, max, onChange, onClose }: {
+  value: string; max: string; onChange: (d: string) => void; onClose: () => void
+}) {
+  const [viewYear, setViewYear] = useState(() => parseInt(value.slice(0, 4)))
+  const [viewMonth, setViewMonth] = useState(() => parseInt(value.slice(5, 7)) - 1)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  const maxDate = new Date(max + 'T12:00:00Z')
+  const giorni = ['L', 'M', 'M', 'G', 'V', 'S', 'D']
+  const mesi = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre']
+
+  const firstDay = new Date(Date.UTC(viewYear, viewMonth, 1))
+  const lastDay = new Date(Date.UTC(viewYear, viewMonth + 1, 0))
+  // start from Monday (0=Mon)
+  let startDow = firstDay.getUTCDay() - 1; if (startDow < 0) startDow = 6
+  const cells: (number | null)[] = Array(startDow).fill(null)
+  for (let d = 1; d <= lastDay.getUTCDate(); d++) cells.push(d)
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  function prevMonth() {
+    if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1) }
+    else setViewMonth(m => m - 1)
+  }
+  function nextMonth() {
+    const nextM = viewMonth === 11 ? 0 : viewMonth + 1
+    const nextY = viewMonth === 11 ? viewYear + 1 : viewYear
+    if (new Date(Date.UTC(nextY, nextM, 1)) > maxDate) return
+    setViewMonth(nextM); if (viewMonth === 11) setViewYear(y => y + 1)
+  }
+
+  function select(day: number) {
+    const k = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    if (k > max) return
+    onChange(k); onClose()
+  }
+
+  const canNextMonth = new Date(Date.UTC(viewYear, viewMonth + 1, 1)) <= maxDate
+
+  return (
+    <div ref={ref} className="absolute z-50 top-full mt-1 left-1/2 -translate-x-1/2 bg-white rounded-2xl border border-ink-navy/10 shadow-xl p-3 w-64">
+      {/* header mese */}
+      <div className="flex items-center justify-between mb-2">
+        <button onClick={prevMonth} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-mist text-ink-navy/50 text-sm">‹</button>
+        <span className="text-xs font-bold text-ink-navy">{mesi[viewMonth]} {viewYear}</span>
+        <button onClick={nextMonth} disabled={!canNextMonth}
+          className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-mist text-ink-navy/50 text-sm disabled:opacity-30">›</button>
+      </div>
+      {/* intestazione giorni */}
+      <div className="grid grid-cols-7 mb-1">
+        {giorni.map((g, i) => (
+          <span key={i} className="text-center text-[10px] font-semibold text-ink-navy/30 py-0.5">{g}</span>
+        ))}
+      </div>
+      {/* celle */}
+      <div className="grid grid-cols-7 gap-y-0.5">
+        {cells.map((day, i) => {
+          if (!day) return <span key={i} />
+          const k = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+          const isSelected = k === value
+          const isToday = k === max
+          const isFuture = k > max
+          return (
+            <button key={i} onClick={() => select(day)} disabled={isFuture}
+              className={`h-8 w-full rounded-lg text-xs font-medium transition-colors disabled:opacity-25 disabled:cursor-not-allowed
+                ${isSelected ? 'bg-electric-blue text-white font-bold' : isToday ? 'bg-electric-blue/10 text-electric-blue font-bold' : 'hover:bg-mist text-ink-navy'}`}>
+              {day}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ── Pagina ──────────────────────────────────────────────────────────────────
 export default function ContiPage() {
   const [tutti, setTutti] = useState<Ordine[]>([])
@@ -196,9 +279,9 @@ export default function ContiPage() {
   const [copertiValue, setCopertiValue] = useState(2)
   const [confermaElimina, setConfermaElimina] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'tavoli' | 'ordini'>('tavoli')
   const [chiusiAperti, setChiusiAperti] = useState(false)
   const [dataFiltro, setDataFiltro] = useState(todayKey)
+  const [calOpen, setCalOpen] = useState(false)
   const [modificando, setModificando] = useState<Ordine | null>(null)
 
   const isOggi = dataFiltro === todayKey()
@@ -219,11 +302,10 @@ export default function ContiPage() {
   }, [fetchOrdini, isOggi])
 
   const ordini = isOggi ? tutti : tutti.filter(o => getSerataKey(o.createdAt) === dataFiltro)
-  const tavoli = ordini.filter(o => o.tipo === 'tavolo' || o.tavoloId != null || o.gruppoId != null)
-  const altriOrdini = ordini.filter(o => o.tipo !== 'tavolo' && o.tavoloId == null && o.gruppoId == null)
-  const lista = tab === 'tavoli' ? tavoli : altriOrdini
-  const aperti = lista.filter(o => o.status !== 'chiuso')
-  const chiusi = lista.filter(o => o.status === 'chiuso')
+  const isTavolo = (o: Ordine) => o.tipo === 'tavolo' || o.tavoloId != null || o.gruppoId != null
+  const isDone = (o: Ordine) => o.status === 'chiuso' || o.status === 'consegnato'
+  const aperti = ordini.filter(o => !isDone(o))
+  const chiusi = ordini.filter(o => isDone(o))
   const totaleAperti = aperti.reduce((s, o) => s + o.totale, 0)
   const totaleChiusi = chiusi.reduce((s, o) => s + o.totale, 0)
 
@@ -248,6 +330,21 @@ export default function ContiPage() {
     }
   }
 
+  async function segnaPronte(o: Ordine) {
+    setChiudendo(o.id)
+    setTutti(prev => prev.map(x => x.id === o.id ? { ...x, status: 'consegnato' } : x))
+    try {
+      await fetch(`/api/ordini/${o.id}`, {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'consegnato' }),
+      })
+    } finally {
+      setChiudendo(null)
+      fetchOrdini()
+    }
+  }
+
   async function eliminaOrdine(o: Ordine) {
     setTutti(prev => prev.filter(x => x.id !== o.id))
     setConfermaElimina(null)
@@ -256,26 +353,48 @@ export default function ContiPage() {
   }
 
   function OrdineCard({ o }: { o: Ordine }) {
-    const aperto = o.status !== 'chiuso'
+    const aperto = !isDone(o)
     const ora = new Date(o.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+
+    // colori header per tipo
+    const headerTheme = isTavolo(o)
+      ? { border: 'border-amber-300', bg: 'bg-amber-50', text: 'text-amber-800', badge: null }
+      : o.tipo === 'delivery'
+        ? { border: 'border-teal-300', bg: 'bg-teal-50', text: 'text-teal-800', badge: 'Delivery' }
+        : { border: 'border-violet-300', bg: 'bg-violet-50', text: 'text-violet-800', badge: 'Asporto' }
+
+    const cardBorder = aperto ? headerTheme.border : 'border-ink-navy/10'
+
     return (
-      <div className={`bg-white border rounded-xl overflow-hidden ${aperto ? 'border-electric-blue/30 shadow-sm' : 'border-ink-navy/10'}`}>
-        <div className={`px-4 py-3 flex items-center justify-between gap-3 flex-wrap ${aperto ? 'bg-electric-blue/5' : 'bg-mist'}`}>
+      <div className={`bg-white border rounded-xl overflow-hidden shadow-sm ${cardBorder}`}>
+        <div className={`px-4 py-3 flex items-center justify-between gap-3 flex-wrap border-b ${aperto ? `${headerTheme.bg} ${headerTheme.border}` : 'bg-mist border-ink-navy/10'}`}>
           <div className="flex items-center gap-2">
-            <span className={`text-sm font-bold ${aperto ? 'text-electric-blue' : 'text-ink-navy/50'}`}>{o.tavolo}</span>
-            <span className="text-xs text-ink-navy/35">{aperto ? 'aperto' : 'chiuso'} {ora}</span>
+            <span className={`text-sm font-bold ${aperto ? headerTheme.text : 'text-ink-navy/50'}`}>{o.tavolo}</span>
+            {headerTheme.badge && aperto && (
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${o.tipo === 'delivery' ? 'bg-teal-200/60 text-teal-700' : 'bg-violet-200/60 text-violet-700'}`}>
+                {headerTheme.badge}
+              </span>
+            )}
+            <span className={`text-xs font-semibold ${aperto ? headerTheme.text + '/60' : 'text-ink-navy/35'}`}>{ora}</span>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            <span className={`text-base font-bold ${aperto ? 'text-ink-navy' : 'text-ink-navy/40'}`}>{fmt(o.totale)}</span>
+            <span className={`text-sm ${aperto ? 'text-ink-navy/70' : 'text-ink-navy/40'}`}>{fmt(o.totale)}</span>
             <button onClick={() => setModificando(o)}
-              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-ink-navy/15 text-ink-navy/60 hover:bg-mist transition-colors">
+              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-ink-navy/15 text-ink-navy/60 hover:bg-white/60 transition-colors">
               Modifica
             </button>
             {aperto && (
-              <button onClick={() => { setCopertiModal(o); setCopertiValue(2) }} disabled={chiudendo === o.id}
-                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-ink-navy text-white hover:bg-ink-navy/80 disabled:opacity-40 transition-colors">
-                {chiudendo === o.id ? '…' : 'Chiudi tavolo'}
-              </button>
+              isTavolo(o) ? (
+                <button onClick={() => { setCopertiModal(o); setCopertiValue(2) }} disabled={chiudendo === o.id}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-ink-navy text-white hover:bg-ink-navy/80 disabled:opacity-40 transition-colors">
+                  {chiudendo === o.id ? '…' : 'Pronto'}
+                </button>
+              ) : (
+                <button onClick={() => segnaPronte(o)} disabled={chiudendo === o.id}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-ink-navy text-white hover:bg-ink-navy/80 disabled:opacity-40 transition-colors">
+                  {chiudendo === o.id ? '…' : 'Pronto'}
+                </button>
+              )
             )}
             {!aperto && (
               confermaElimina === o.id ? (
@@ -296,11 +415,11 @@ export default function ContiPage() {
           {o.righe.map(r => (
             <div key={r.id} className="flex items-center justify-between px-4 py-2.5 gap-3">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-xs font-bold text-ink-navy/40 w-5 shrink-0 text-center">{r.quantita}×</span>
-                <span className="text-sm text-ink-navy truncate">{r.nome}</span>
+                <span className="text-xs font-bold text-ink-navy w-5 shrink-0 text-center">{r.quantita}×</span>
+                <span className="text-sm font-semibold text-ink-navy truncate">{r.nome}</span>
                 {r.note && <span className="text-xs text-ink-navy/35 truncate">({r.note})</span>}
               </div>
-              <span className="text-sm text-ink-navy/60 shrink-0">{fmt(r.prezzo * r.quantita)}</span>
+              <span className="text-sm text-ink-navy/50 shrink-0">{fmt(r.prezzo * r.quantita)}</span>
             </div>
           ))}
           {o.righe.length === 0 && <p className="px-4 py-3 text-sm text-ink-navy/30">Nessuna voce</p>}
@@ -325,31 +444,33 @@ export default function ContiPage() {
       <div className="flex items-center gap-2">
         <button onClick={() => { setDataFiltro(prevDay(dataFiltro)); setChiusiAperti(false) }}
           className="w-8 h-8 flex items-center justify-center rounded-lg border border-ink-navy/15 text-ink-navy/50 hover:bg-mist transition-colors text-sm">‹</button>
-        <span className="flex-1 text-center text-sm font-semibold text-ink-navy">{fmtGiorno(dataFiltro)}</span>
-        <button onClick={() => { setDataFiltro(nextDay(dataFiltro)); setChiusiAperti(false) }}
-          disabled={dataFiltro >= todayKey()}
-          className="w-8 h-8 flex items-center justify-center rounded-lg border border-ink-navy/15 text-ink-navy/50 hover:bg-mist disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm">›</button>
-        {!isOggi && (
-          <button onClick={() => { setDataFiltro(todayKey()); setChiusiAperti(false) }}
-            className="text-xs text-electric-blue font-semibold px-2.5 py-1.5 rounded-lg border border-electric-blue/25 hover:bg-electric-blue/10 transition-colors">
-            Oggi
+        <div className="flex-1 flex justify-center relative">
+          <button
+            onClick={() => setCalOpen(v => !v)}
+            className="text-sm font-semibold text-ink-navy py-1 px-3 rounded-lg border border-ink-navy/10 bg-white hover:bg-mist transition-colors select-none whitespace-nowrap">
+            {fmtGiorno(dataFiltro)}
+            <span className="ml-1.5 text-ink-navy/30 text-xs">▾</span>
           </button>
-        )}
-      </div>
-
-      {/* Tab */}
-      <div className="flex gap-2">
-        {([['tavoli', 'Tavoli'], ['ordini', 'Asporto & Delivery']] as const).map(([k, l]) => (
-          <button key={k} onClick={() => { setTab(k); setChiusiAperti(false) }}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${tab === k ? 'bg-electric-blue text-white' : 'bg-white border border-ink-navy/15 text-ink-navy/60 hover:bg-mist'}`}>
-            {l}
-            {k === 'tavoli' && isOggi && tavoli.filter(o => o.status !== 'chiuso').length > 0 && (
-              <span className="ml-1.5 bg-zest-lime text-ink-navy text-xs font-bold px-1.5 py-0.5 rounded-full">
-                {tavoli.filter(o => o.status !== 'chiuso').length}
-              </span>
-            )}
-          </button>
-        ))}
+          {calOpen && (
+            <MiniCalendar
+              value={dataFiltro}
+              max={todayKey()}
+              onChange={d => { setDataFiltro(d); setChiusiAperti(false) }}
+              onClose={() => setCalOpen(false)}
+            />
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {!isOggi && (
+            <button onClick={() => { setDataFiltro(todayKey()); setChiusiAperti(false) }}
+              className="text-xs text-electric-blue font-semibold px-2.5 py-1.5 rounded-lg border border-electric-blue/25 hover:bg-electric-blue/10 transition-colors">
+              Oggi
+            </button>
+          )}
+          <button onClick={() => { setDataFiltro(nextDay(dataFiltro)); setChiusiAperti(false) }}
+            disabled={dataFiltro >= todayKey()}
+            className="w-8 h-8 flex items-center justify-center rounded-lg border border-ink-navy/15 text-ink-navy/50 hover:bg-mist disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm">›</button>
+        </div>
       </div>
 
       {/* Aperti */}
@@ -357,14 +478,14 @@ export default function ContiPage() {
         <div>
           <div className="flex items-center gap-3 mb-3">
             <h2 className="text-sm font-semibold text-ink-navy/50 uppercase tracking-wider">
-              {tab === 'tavoli' ? 'Conti aperti' : 'In corso'}
+              In corso
               {aperti.length > 0 && <span className="ml-1.5 bg-electric-blue text-white text-xs font-bold px-1.5 py-0.5 rounded-full">{aperti.length}</span>}
             </h2>
             {totaleAperti > 0 && <span className="text-xs text-ink-navy/40">{fmt(totaleAperti)} in sospeso</span>}
           </div>
           {aperti.length === 0 ? (
             <div className="bg-white border border-ink-navy/10 rounded-xl p-6 text-center text-ink-navy/30 text-sm">
-              {tab === 'tavoli' ? 'Nessun conto aperto — i QR apriranno un conto quando il cliente ordina' : 'Nessun ordine in corso'}
+              Nessun ordine in corso — arriveranno qui non appena il cliente ordina
             </div>
           ) : (
             <div className="space-y-3">{aperti.map(o => <OrdineCard key={o.id} o={o} />)}</div>
@@ -372,13 +493,13 @@ export default function ContiPage() {
         </div>
       )}
 
-      {/* Chiusi */}
+      {/* Pronti / Storico */}
       {chiusi.length > 0 && (
         <div>
           {isOggi ? (
             <button onClick={() => setChiusiAperti(v => !v)} className="w-full flex items-center gap-3 py-2 text-left">
               <span className="text-sm font-semibold text-ink-navy/50 uppercase tracking-wider">
-                Chiusi questa serata <span className="font-normal normal-case text-ink-navy/35">({chiusi.length})</span>
+                Pronti questa serata <span className="font-normal normal-case text-ink-navy/35">({chiusi.length})</span>
               </span>
               <span className="text-xs text-ink-navy/40">{fmt(totaleChiusi)}</span>
               <span className={`ml-auto text-ink-navy/30 transition-transform ${chiusiAperti ? 'rotate-180' : ''}`}>▾</span>

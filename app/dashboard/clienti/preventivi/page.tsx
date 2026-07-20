@@ -39,9 +39,6 @@ interface StoricoProfilo {
 }
 
 function SintesiRichiesta({ items, note }: { items: ItemExt[]; note?: string }) {
-  const righe = items.filter(i => i.descrizione).map(i =>
-    i.quantita > 1 ? `${i.descrizione} × ${i.quantita}` : i.descrizione
-  )
   const dataMatch = note?.match(/DATA_ISO:(\d{4}-\d{2}-\d{2})/)
   const oraMatch = note?.match(/DATA_ISO:\d{4}-\d{2}-\d{2}T(\d{2}:\d{2})/) ?? note?.match(/ORA_ISO:(\d{2}:\d{2})/)
   const copertiNote = note?.match(/Coperti:\s*(\d+)/)
@@ -52,32 +49,57 @@ function SintesiRichiesta({ items, note }: { items: ItemExt[]; note?: string }) 
   const occasione = items[0]?.occasione ?? occasioneNote?.[1]?.trim()
   const noteClean = note?.replace(/DATA_ISO:\S+|ORA_ISO:\S+|Coperti:\s*\d+\.|Allergie:[^.]+\.|Occasione:[^.]+\.|Generato automaticamente via chat\.|Prenotazione[^.]+via[^.]+\.|Telefono:[^.]+\./g, '').trim()
 
-  const rows: { label: string; value: string; accent?: string }[] = []
-  // Mostra descrizione senza il moltiplicatore coperti (già mostrato nella riga Coperti)
-  const descBase = righe.map(r => r.replace(/\s*×\s*\d+$/, '')).join(', ')
-  if (descBase) rows.push({ label: 'Richiesta', value: descBase })
-  if (dataMatch) rows.push({ label: 'Data', value: new Date(dataMatch[1]).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }) })
-  if (oraMatch) rows.push({ label: 'Orario', value: oraMatch[1] })
-  if (coperti != null && coperti > 0) rows.push({ label: 'Coperti', value: `${coperti} ${coperti === 1 ? 'persona' : 'persone'}` })
-  if (allergie && allergie.toLowerCase() !== 'nessuna') rows.push({ label: 'Allergie', value: allergie, accent: 'text-red-600' })
-  if (occasione) rows.push({ label: 'Occasione', value: occasione })
-  if (noteClean && noteClean.length > 3) rows.push({ label: 'Note', value: noteClean })
+  const dataFmt = dataMatch
+    ? new Date(dataMatch[1] + 'T12:00:00Z').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+    : null
 
   return (
     <div className="divide-y divide-ink-navy/6">
-      {rows.map(r => (
-        <div key={r.label} className="flex gap-3 py-2.5">
-          <span className="text-xs text-ink-navy/40 w-20 shrink-0 pt-0.5">{r.label}</span>
-          <span className={`text-sm font-medium ${r.accent ?? 'text-ink-navy'}`}>{r.value}</span>
+      {/* Coperti — in evidenza */}
+      {coperti != null && coperti > 0 && (
+        <div className="flex gap-3 py-2.5">
+          <span className="text-xs text-ink-navy/40 w-20 shrink-0 pt-0.5">Coperti</span>
+          <span className="text-sm font-bold text-ink-navy">{coperti} {coperti === 1 ? 'persona' : 'persone'}</span>
         </div>
-      ))}
+      )}
+      {/* Data + ora — bold */}
+      {dataFmt && (
+        <div className="flex gap-3 py-2.5">
+          <span className="text-xs text-ink-navy/40 w-20 shrink-0 pt-0.5">Data</span>
+          <span className="text-sm font-bold text-ink-navy capitalize">
+            {dataFmt}
+            {oraMatch && <span className="ml-2 text-electric-blue">{oraMatch[1]}</span>}
+          </span>
+        </div>
+      )}
+      {/* Allergie */}
+      {allergie && allergie.toLowerCase() !== 'nessuna' && (
+        <div className="flex gap-3 py-2.5">
+          <span className="text-xs text-ink-navy/40 w-20 shrink-0 pt-0.5">Allergie</span>
+          <span className="text-sm font-medium text-red-600">{allergie}</span>
+        </div>
+      )}
+      {/* Occasione */}
+      {occasione && (
+        <div className="flex gap-3 py-2.5">
+          <span className="text-xs text-ink-navy/40 w-20 shrink-0 pt-0.5">Occasione</span>
+          <span className="text-sm font-medium text-ink-navy">{occasione}</span>
+        </div>
+      )}
+      {/* Note */}
+      {noteClean && noteClean.length > 3 && (
+        <div className="flex gap-3 py-2.5">
+          <span className="text-xs text-ink-navy/40 w-20 shrink-0 pt-0.5">Note</span>
+          <span className="text-sm font-medium text-ink-navy">{noteClean}</span>
+        </div>
+      )}
     </div>
   )
 }
 
 const TIPI: { id: string; label: string; color: string }[] = [
   { id: 'tutti', label: 'Tutte', color: 'bg-mist text-ink-navy/70' },
-  { id: 'tavolo', label: 'Tavolo', color: 'bg-orange-100 text-orange-700' },
+  { id: 'tavolo', label: 'Tavolo', color: 'bg-electric-blue/10 text-electric-blue' },
   { id: 'servizio', label: 'Servizio / Altro', color: 'bg-teal-100 text-teal-700' },
 ]
 
@@ -461,6 +483,53 @@ function ConfermaAppuntamentoModal({ richiesta, onClose, onConferma, initialTavo
   )
 }
 
+function MiniCalPrev({ value, max, onChange, onClose }: {
+  value: string; max: string; onChange: (d: string) => void; onClose: () => void
+}) {
+  const [viewYear, setViewYear] = useState(() => parseInt(value.slice(0, 4)))
+  const [viewMonth, setViewMonth] = useState(() => parseInt(value.slice(5, 7)) - 1)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    function h(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) onClose() }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [onClose])
+  const mesi = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre']
+  const giorni = ['L','M','M','G','V','S','D']
+  const firstDay = new Date(Date.UTC(viewYear, viewMonth, 1))
+  const lastDay = new Date(Date.UTC(viewYear, viewMonth + 1, 0))
+  let startDow = firstDay.getUTCDay() - 1; if (startDow < 0) startDow = 6
+  const cells: (number | null)[] = Array(startDow).fill(null)
+  for (let d = 1; d <= lastDay.getUTCDate(); d++) cells.push(d)
+  while (cells.length % 7 !== 0) cells.push(null)
+  function prevM() { if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y-1) } else setViewMonth(m => m-1) }
+  function nextM() { if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y+1) } else setViewMonth(m => m+1) }
+  return (
+    <div ref={ref} className="absolute z-50 top-full mt-1 left-1/2 -translate-x-1/2 bg-white rounded-2xl border border-ink-navy/10 shadow-xl p-3 w-64">
+      <div className="flex items-center justify-between mb-2">
+        <button onClick={prevM} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-mist text-ink-navy/50 text-sm">‹</button>
+        <span className="text-xs font-bold text-ink-navy">{mesi[viewMonth]} {viewYear}</span>
+        <button onClick={nextM} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-mist text-ink-navy/50 text-sm">›</button>
+      </div>
+      <div className="grid grid-cols-7 mb-1">{giorni.map((g,i) => <span key={i} className="text-center text-[10px] font-semibold text-ink-navy/30 py-0.5">{g}</span>)}</div>
+      <div className="grid grid-cols-7 gap-y-0.5">
+        {cells.map((day, i) => {
+          if (!day) return <span key={i} />
+          const k = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
+          const isSel = k === value
+          const isToday = k === new Date().toISOString().slice(0,10)
+          return (
+            <button key={i} onClick={() => { onChange(k); onClose() }}
+              className={`h-8 w-full rounded-lg text-xs font-medium transition-colors ${isSel ? 'bg-electric-blue text-white font-bold' : isToday ? 'bg-electric-blue/10 text-electric-blue font-bold' : 'hover:bg-mist text-ink-navy'}`}>
+              {day}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function Page() {
   return <Suspense><Richieste /></Suspense>
 }
@@ -474,9 +543,10 @@ function Richieste() {
   const [selected, setSelected] = useState<Richiesta | null>(null)
   const [confermaApp, setConfermaApp] = useState<Richiesta | null>(null)
   const [proposta, setProposta] = useState<Richiesta | null>(null)
-  const [tipoAttivo, setTipoAttivo] = useState('tutti')
-  const [vistaConcluse, setVistaConcluse] = useState(false)
-  const [tipoAttivoConcluse, setTipoAttivoConcluse] = useState('tutti')
+  const [accettateAperte, setAccettateAperte] = useState(true)
+  const [concluseAperte, setConcluse] = useState(false)
+  const [dataFiltroAcc, setDataFiltroAcc] = useState(() => new Date().toISOString().slice(0, 10))
+  const [calOpenAcc, setCalOpenAcc] = useState(false)
   const [clienteStorico, setClienteStorico] = useState<StoricoProfilo | null>(null)
   const [allergieMemoriate, setAllergieMemoriate] = useState<string[]>([])
   const [preferenzeMemoriate, setPreferenzeMemoriate] = useState<string[]>([])
@@ -765,317 +835,91 @@ function Richieste() {
     setSelected(null)
   }
 
-  const daVerificare = richieste.filter(r => r.status === 'da_verificare')
-  const inListaAttesa = richieste.filter(r => r.status === 'lista_attesa' || r.status === 'lista_attesa_contattato')
-  const tipoInfo = (tipo: string) => TIPI.find(t => t.id === tipo) ?? TIPI[0]
-
-  const isListaAttesa = (s: string) => s === 'lista_attesa' || s === 'lista_attesa_contattato'
   const isConcluso = (s: string) => STATI_CONCLUSI.includes(s)
 
-  const richiesteAttive = richieste.filter(r => !isConcluso(r.status))
+  function getDataRichiesta(r: Richiesta): string | null {
+    return r.note?.match(/DATA_ISO:(\d{4}-\d{2}-\d{2})/)?.[1] ?? null
+  }
+  function prevDay(k: string) { const d = new Date(k + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate()-1); return d.toISOString().slice(0,10) }
+  function nextDay(k: string) { const d = new Date(k + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate()+1); return d.toISOString().slice(0,10) }
+  function fmtGiorno(k: string) {
+    const today = new Date().toISOString().slice(0,10)
+    if (k === today) return 'Oggi'
+    if (k === prevDay(today)) return 'Ieri'
+    if (k === nextDay(today)) return 'Domani'
+    return new Date(k + 'T12:00:00Z').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })
+  }
+
+  const daVerificare = richieste.filter(r => r.status === 'da_verificare')
+  const accettate = richieste.filter(r => r.status === 'accettato')
+  const accettateDelGiorno = accettate.filter(r => getDataRichiesta(r) === dataFiltroAcc)
   const richiesteConcluse = richieste.filter(r => isConcluso(r.status))
 
-  const richiesteVisibili = tipoAttivo === 'tutti'
-    ? richiesteAttive.filter(r => r.status !== 'da_verificare' && !isListaAttesa(r.status))
-    : richiesteAttive.filter(r => r.tipo === tipoAttivo && r.status !== 'da_verificare' && !isListaAttesa(r.status))
-
-  const richiesteConclusiVisibili = tipoAttivoConcluse === 'tutti'
-    ? richiesteConcluse
-    : richiesteConcluse.filter(r => r.tipo === tipoAttivoConcluse)
-
-  const conteggioPerTipo = (tipo: string) =>
-    tipo === 'tutti'
-      ? richiesteAttive.filter(r => r.status !== 'da_verificare' && !isListaAttesa(r.status)).length
-      : richiesteAttive.filter(r => r.tipo === tipo && r.status !== 'da_verificare' && !isListaAttesa(r.status)).length
-
-  const conteggioConclusiPerTipo = (tipo: string) =>
-    tipo === 'tutti' ? richiesteConcluse.length : richiesteConcluse.filter(r => r.tipo === tipo).length
+  const today = new Date().toISOString().slice(0, 10)
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-ink-navy">Richieste</h1>
-          <p className="text-ink-navy/50 mt-0.5">
-            {richiesteAttive.filter(r => !isListaAttesa(r.status) && r.status !== 'da_verificare').length} attive
-            {daVerificare.length > 0 && <> · <span className="text-amber-600 font-medium">{daVerificare.length} da verificare</span></>}
-            {richiesteConcluse.length > 0 && <> · <span className="text-ink-navy/40">{richiesteConcluse.length} concluse</span></>}
+          <h1 className="text-2xl font-bold text-ink-navy">Prenotazioni tavoli</h1>
+          <p className="text-ink-navy/50 mt-0.5 text-sm">
+            {daVerificare.length > 0
+              ? <span className="text-amber-600 font-medium">{daVerificare.length} da verificare</span>
+              : 'Nessuna richiesta in attesa'}
+            {accettate.length > 0 && <> · {accettate.length} accettate</>}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex gap-1 bg-mist rounded-lg p-1">
-            <button onClick={() => setVistaConcluse(false)}
-              className={`text-xs px-3 py-1.5 rounded-md font-semibold transition-colors ${!vistaConcluse ? 'bg-white text-ink-navy shadow-sm' : 'text-ink-navy/50 hover:text-ink-navy/70'}`}>
-              Attive
-            </button>
-            <button onClick={() => setVistaConcluse(true)}
-              className={`text-xs px-3 py-1.5 rounded-md font-semibold transition-colors flex items-center gap-1.5 ${vistaConcluse ? 'bg-white text-ink-navy shadow-sm' : 'text-ink-navy/50 hover:text-ink-navy/70'}`}>
-              Concluse
-              {richiesteConcluse.length > 0 && (
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${vistaConcluse ? 'bg-ink-navy/10 text-ink-navy/60' : 'bg-ink-navy/10 text-ink-navy/40'}`}>
-                  {richiesteConcluse.length}
-                </span>
-              )}
-            </button>
-          </div>
-          {!vistaConcluse && (
-            <button onClick={() => setShowModal(true)}
-              className="bg-electric-blue text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-electric-blue/90 transition-colors">
-              + Nuova richiesta
-            </button>
-          )}
-        </div>
+        <button onClick={() => setShowModal(true)}
+          className="bg-electric-blue text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-electric-blue/90 transition-colors">
+          + Nuova
+        </button>
       </div>
 
       {loading ? (
         <div className="text-center text-ink-navy/35 py-12">Caricamento...</div>
-      ) : vistaConcluse ? (
-        /* ── VISTA CONCLUSE ── */
-        <div className="space-y-4">
-          <div className="flex gap-2 flex-wrap">
-            {TIPI.map(t => {
-              const count = conteggioConclusiPerTipo(t.id)
-              return (
-                <button key={t.id} onClick={() => setTipoAttivoConcluse(t.id)}
-                  className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg font-medium transition-colors border ${
-                    tipoAttivoConcluse === t.id
-                      ? 'bg-electric-blue text-white border-electric-blue'
-                      : 'bg-white border-ink-navy/10 text-ink-navy/60 hover:border-electric-blue'
-                  }`}>
-                  <span>{t.label}</span>
-                  {count > 0 && (
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${tipoAttivoConcluse === t.id ? 'bg-white/20 text-white' : 'bg-mist text-ink-navy/50'}`}>
-                      {count}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-
-          {richiesteConclusiVisibili.length === 0 ? (
-            <div className="bg-white border border-dashed border-ink-navy/15 rounded-xl p-12 text-center text-ink-navy/35">
-              <p className="font-medium">Nessuna richiesta conclusa</p>
-              <p className="text-sm mt-1">Le richieste completate, cancellate o no-show appariranno qui</p>
-            </div>
-          ) : (
-            <div className="bg-white border border-ink-navy/10 rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-mist border-b border-ink-navy/10">
-                  <tr>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">N°</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Tipo</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Cliente</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Richiesta</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Data</th>
-                    <th className="text-center px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Esito</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {richiesteConclusiVisibili.map(r => {
-                    const t = tipoInfo(r.tipo)
-                    return (
-                      <tr key={r.id} onClick={() => setSelected(r)} className="hover:bg-mist cursor-pointer transition-colors opacity-75">
-                        <td className="px-4 py-3 font-medium text-ink-navy">#{String(r.numero).padStart(3, '0')}</td>
-                        <td className="px-4 py-3">
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${t.color}`}>{t.label}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-ink-navy">{r.clienteName}</p>
-                          {r.clienteEmail && <p className="text-xs text-ink-navy/35">{r.clienteEmail}</p>}
-                        </td>
-                        <td className="px-4 py-3 max-w-xs">
-                          {(() => {
-                            const items = JSON.parse(r.items) as Item[]
-                            const desc = items.map(i => i.descrizione).filter(Boolean).join(', ')
-                            return <p className="text-sm text-ink-navy/60 truncate">{desc || '—'}</p>
-                          })()}
-                        </td>
-                        <td className="px-4 py-3 text-ink-navy/50">{new Date(r.createdAt).toLocaleDateString('it-IT')}</td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={`text-xs font-semibold px-2 py-1 rounded-full ${STATUS_COLORS[r.status] ?? 'bg-mist text-ink-navy/60'}`}>
-                            {STATUS_LABELS[r.status] ?? r.status}
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
       ) : (
         <div className="space-y-6">
-          {/* Da verificare */}
-          {daVerificare.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-sm font-semibold text-amber-700 uppercase tracking-wider">Da verificare</span>
-                <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full">{daVerificare.length}</span>
+
+          {/* ── DA VERIFICARE ── */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-sm font-semibold text-amber-700 uppercase tracking-wider">Da verificare</span>
+              {daVerificare.length > 0 && <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full">{daVerificare.length}</span>}
+            </div>
+            {daVerificare.length === 0 ? (
+              <div className="bg-white border border-dashed border-ink-navy/15 rounded-xl p-8 text-center text-ink-navy/30 text-sm">
+                <IconClipboard />
+                <p className="mt-3 font-medium">Nessuna richiesta da verificare</p>
+                <p className="text-xs mt-1">Le nuove prenotazioni arriveranno qui</p>
               </div>
+            ) : (
               <div className="bg-white border-2 border-amber-200 rounded-xl overflow-hidden">
                 <table className="w-full text-sm">
                   <thead className="bg-amber-50 border-b border-amber-200">
                     <tr>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-amber-600 uppercase tracking-wider">N°</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-amber-600 uppercase tracking-wider">Tipo</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-amber-600 uppercase tracking-wider">Cliente</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-amber-600 uppercase tracking-wider">Richiesta</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-amber-600 uppercase tracking-wider">Data</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-amber-600 uppercase tracking-wider">Dettagli</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-amber-600 uppercase tracking-wider">Data richiesta</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-amber-100">
                     {daVerificare.map(r => {
-                      const t = tipoInfo(r.tipo)
+                      const dataRes = getDataRichiesta(r)
+                      const oraM = r.note?.match(/DATA_ISO:\d{4}-\d{2}-\d{2}T(\d{2}:\d{2})/) ?? r.note?.match(/ORA_ISO:(\d{2}:\d{2})/)
+                      const copertiM = r.note?.match(/Coperti:\s*(\d+)/)
                       return (
                         <tr key={r.id} onClick={() => setSelected(r)} className="hover:bg-amber-50 cursor-pointer transition-colors">
-                          <td className="px-4 py-3 font-medium text-ink-navy">#{String(r.numero).padStart(3, '0')}</td>
                           <td className="px-4 py-3">
-                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${t.color}`}>{t.label}</span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <p className="font-medium text-ink-navy">{r.clienteName}</p>
-                            {r.clienteEmail && <p className="text-xs text-ink-navy/35">{r.clienteEmail}</p>}
-                          </td>
-                          <td className="px-4 py-3 max-w-xs">
-                            {(() => {
-                              const items = JSON.parse(r.items) as Item[]
-                              const desc = items.map(i => i.descrizione).filter(Boolean).join(', ')
-                              return <p className="text-sm text-ink-navy/60 truncate">{desc || '—'}</p>
-                            })()}
-                          </td>
-                          <td className="px-4 py-3 text-ink-navy/50">{new Date(r.createdAt).toLocaleDateString('it-IT')}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Lista d'attesa */}
-          {inListaAttesa.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-sm font-semibold text-orange-700 uppercase tracking-wider">Lista d&apos;attesa</span>
-                <span className="bg-orange-100 text-orange-700 text-xs font-bold px-2 py-0.5 rounded-full">{inListaAttesa.length}</span>
-              </div>
-              <div className="bg-white border-2 border-orange-200 rounded-xl overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-orange-50 border-b border-orange-200">
-                    <tr>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-orange-600 uppercase tracking-wider">N°</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-orange-600 uppercase tracking-wider">Cliente</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-orange-600 uppercase tracking-wider">Richiesta</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-orange-600 uppercase tracking-wider">Data</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-orange-100">
-                    {inListaAttesa.map(r => (
-                      <tr key={r.id} onClick={() => setSelected(r)} className="hover:bg-orange-50 cursor-pointer transition-colors">
-                        <td className="px-4 py-3 font-medium text-ink-navy">#{String(r.numero).padStart(3, '0')}</td>
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-ink-navy">{r.clienteName}</p>
-                          {r.clienteEmail && <p className="text-xs text-ink-navy/35">{r.clienteEmail}</p>}
-                        </td>
-                        <td className="px-4 py-3 max-w-xs">
-                          {(() => {
-                            const items = JSON.parse(r.items) as Item[]
-                            const desc = items.map(i => i.descrizione).filter(Boolean).join(', ')
-                            return <p className="text-sm text-ink-navy/60 truncate">{desc || '—'}</p>
-                          })()}
-                        </td>
-                        <td className="px-4 py-3 text-ink-navy/50">{new Date(r.createdAt).toLocaleDateString('it-IT')}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Tab per tipo */}
-          <div>
-            <div className="flex gap-2 mb-4 flex-wrap">
-              {TIPI.map(t => {
-                const count = conteggioPerTipo(t.id)
-                return (
-                  <button key={t.id} onClick={() => setTipoAttivo(t.id)}
-                    className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg font-medium transition-colors border ${
-                      tipoAttivo === t.id
-                        ? 'bg-electric-blue text-white border-electric-blue'
-                        : 'bg-white border-ink-navy/10 text-ink-navy/60 hover:border-electric-blue'
-                    }`}>
-                    <span>{t.label}</span>
-                    {count > 0 && (
-                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${tipoAttivo === t.id ? 'bg-white/20 text-white' : 'bg-mist text-ink-navy/50'}`}>
-                        {count}
-                      </span>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-
-            {richiesteVisibili.length === 0 ? (
-              <div className="bg-white border border-dashed border-ink-navy/15 rounded-xl p-12 text-center text-ink-navy/35">
-                <div className="w-11 h-11 rounded-xl bg-mist flex items-center justify-center p-2.5 mx-auto mb-4">
-                  <IconClipboard />
-                </div>
-                <p className="font-medium">
-                  {tipoAttivo === 'tutti' ? 'Nessuna richiesta ancora' : `Nessuna richiesta di tipo "${tipoInfo(tipoAttivo).label}"`}
-                </p>
-                <p className="text-sm mt-1">Le richieste arrivano dal chatbot o puoi crearne una manualmente</p>
-                <button onClick={() => setShowModal(true)}
-                  className="mt-4 bg-electric-blue text-white text-sm font-semibold px-5 py-2 rounded-lg hover:bg-electric-blue/90">
-                  + Nuova richiesta
-                </button>
-              </div>
-            ) : (
-              <div className="bg-white border border-ink-navy/10 rounded-xl overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-mist border-b border-ink-navy/10">
-                    <tr>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">N°</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Tipo</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Cliente</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Richiesta</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Data</th>
-                      <th className="text-right px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Importo</th>
-                      <th className="text-center px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Stato</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {richiesteVisibili.map(r => {
-                      const t = tipoInfo(r.tipo)
-                      return (
-                        <tr key={r.id} onClick={() => setSelected(r)} className="hover:bg-mist cursor-pointer transition-colors">
-                          <td className="px-4 py-3 font-medium text-ink-navy">#{String(r.numero).padStart(3, '0')}</td>
-                          <td className="px-4 py-3">
-                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${t.color}`}>{t.label}</span>
+                            <p className="font-semibold text-ink-navy">{r.clienteName}</p>
+                            {r.clienteEmail && <p className="text-xs text-ink-navy/40">{r.clienteEmail}</p>}
                           </td>
                           <td className="px-4 py-3">
-                            <p className="font-medium text-ink-navy">{r.clienteName}</p>
-                            {r.clienteEmail && <p className="text-xs text-ink-navy/35">{r.clienteEmail}</p>}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {dataRes && <span className="text-xs font-semibold text-ink-navy bg-mist px-2 py-0.5 rounded-full">{new Date(dataRes+'T12:00:00Z').toLocaleDateString('it-IT',{day:'numeric',month:'short'})}{oraM ? ` · ${oraM[1]}` : ''}</span>}
+                              {copertiM && <span className="text-xs text-ink-navy/50">{copertiM[1]} pers.</span>}
+                            </div>
                           </td>
-                          <td className="px-4 py-3 max-w-xs">
-                            {(() => {
-                              const items = JSON.parse(r.items) as Item[]
-                              const desc = items.map(i => i.descrizione).filter(Boolean).join(', ')
-                              return <p className="text-sm text-ink-navy/60 truncate">{desc || '—'}</p>
-                            })()}
-                          </td>
-                          <td className="px-4 py-3 text-ink-navy/50">{new Date(r.createdAt).toLocaleDateString('it-IT')}</td>
-                          <td className="px-4 py-3 text-right font-semibold text-ink-navy">
-                            {r.totale > 0 ? `€ ${r.totale.toFixed(2)}` : <span className="text-ink-navy/35 italic text-xs">—</span>}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <span className={`text-xs font-semibold px-2 py-1 rounded-full ${STATUS_COLORS[r.status] ?? 'bg-mist text-ink-navy/60'}`}>
-                              {STATUS_LABELS[r.status] ?? r.status}
-                            </span>
-                          </td>
+                          <td className="px-4 py-3 text-xs text-ink-navy/40">{new Date(r.createdAt).toLocaleDateString('it-IT')}</td>
                         </tr>
                       )
                     })}
@@ -1084,6 +928,139 @@ function Richieste() {
               </div>
             )}
           </div>
+
+          {/* ── ACCETTATE (collassabile con navigazione data) ── */}
+          <div>
+            <button onClick={() => setAccettateAperte(v => !v)} className="w-full flex items-center gap-3 py-2 text-left group">
+              <div className="h-px flex-1 bg-ink-navy/8" />
+              <span className="text-xs font-semibold text-ink-navy/40 uppercase tracking-wider group-hover:text-ink-navy/60 transition-colors flex items-center gap-1.5">
+                Accettate
+                {accettate.length > 0 && <span className="bg-mist text-ink-navy/40 px-2 py-0.5 rounded-full normal-case tracking-normal">{accettate.length}</span>}
+                <span className="text-ink-navy/30">{accettateAperte ? '▲' : '▼'}</span>
+              </span>
+              <div className="h-px flex-1 bg-ink-navy/8" />
+            </button>
+
+            {accettateAperte && (
+              <div className="mt-3 space-y-3">
+                {/* Navigazione data */}
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setDataFiltroAcc(prevDay(dataFiltroAcc))}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg border border-ink-navy/15 text-ink-navy/50 hover:bg-mist transition-colors text-sm">‹</button>
+                  <div className="flex-1 flex justify-center relative">
+                    <button onClick={() => setCalOpenAcc(v => !v)}
+                      className="text-sm font-semibold text-ink-navy py-1 px-3 rounded-lg border border-ink-navy/10 bg-white hover:bg-mist transition-colors select-none whitespace-nowrap">
+                      {fmtGiorno(dataFiltroAcc)}
+                      <span className="ml-1.5 text-ink-navy/30 text-xs">▾</span>
+                    </button>
+                    {calOpenAcc && (
+                      <MiniCalPrev
+                        value={dataFiltroAcc}
+                        max={new Date(Date.now() + 180*24*3600*1000).toISOString().slice(0,10)}
+                        onChange={d => setDataFiltroAcc(d)}
+                        onClose={() => setCalOpenAcc(false)}
+                      />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {dataFiltroAcc !== today && (
+                      <button onClick={() => setDataFiltroAcc(today)}
+                        className="text-xs text-electric-blue font-semibold px-2.5 py-1.5 rounded-lg border border-electric-blue/25 hover:bg-electric-blue/10 transition-colors">
+                        Oggi
+                      </button>
+                    )}
+                    <button onClick={() => setDataFiltroAcc(nextDay(dataFiltroAcc))}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-ink-navy/15 text-ink-navy/50 hover:bg-mist transition-colors text-sm">›</button>
+                  </div>
+                </div>
+
+                {accettateDelGiorno.length === 0 ? (
+                  <div className="bg-white border border-dashed border-ink-navy/15 rounded-xl p-8 text-center text-ink-navy/30 text-sm">
+                    Nessuna prenotazione accettata per {fmtGiorno(dataFiltroAcc).toLowerCase()}
+                  </div>
+                ) : (
+                  <div className="bg-white border border-ink-navy/10 rounded-xl overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-mist border-b border-ink-navy/10">
+                        <tr>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Cliente</th>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Ora</th>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Coperti</th>
+                          <th className="text-center px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Stato</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {accettateDelGiorno.map(r => {
+                          const oraM = r.note?.match(/DATA_ISO:\d{4}-\d{2}-\d{2}T(\d{2}:\d{2})/) ?? r.note?.match(/ORA_ISO:(\d{2}:\d{2})/)
+                          const copertiM = r.note?.match(/Coperti:\s*(\d+)/)
+                          return (
+                            <tr key={r.id} onClick={() => setSelected(r)} className="hover:bg-mist cursor-pointer transition-colors">
+                              <td className="px-4 py-3">
+                                <p className="font-semibold text-ink-navy">{r.clienteName}</p>
+                                {r.clienteEmail && <p className="text-xs text-ink-navy/40">{r.clienteEmail}</p>}
+                              </td>
+                              <td className="px-4 py-3 text-ink-navy/70">{oraM?.[1] ?? '—'}</td>
+                              <td className="px-4 py-3 text-ink-navy/70">{copertiM ? `${copertiM[1]} pers.` : '—'}</td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`text-xs font-semibold px-2 py-1 rounded-full ${STATUS_COLORS[r.status] ?? 'bg-mist text-ink-navy/60'}`}>
+                                  {STATUS_LABELS[r.status] ?? r.status}
+                                </span>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── CONCLUSE (collassabile) ── */}
+          {richiesteConcluse.length > 0 && (
+            <div>
+              <button onClick={() => setConcluse(v => !v)} className="w-full flex items-center gap-3 py-2 text-left group">
+                <div className="h-px flex-1 bg-ink-navy/8" />
+                <span className="text-xs font-semibold text-ink-navy/40 uppercase tracking-wider group-hover:text-ink-navy/60 transition-colors flex items-center gap-1.5">
+                  Concluse
+                  <span className="bg-mist text-ink-navy/40 px-2 py-0.5 rounded-full normal-case tracking-normal">{richiesteConcluse.length}</span>
+                  <span className="text-ink-navy/30">{concluseAperte ? '▲' : '▼'}</span>
+                </span>
+                <div className="h-px flex-1 bg-ink-navy/8" />
+              </button>
+              {concluseAperte && (
+                <div className="mt-3 bg-white border border-ink-navy/10 rounded-xl overflow-hidden opacity-75">
+                  <table className="w-full text-sm">
+                    <thead className="bg-mist border-b border-ink-navy/10">
+                      <tr>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Cliente</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Data prenotazione</th>
+                        <th className="text-center px-4 py-3 text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Esito</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {richiesteConcluse.map(r => {
+                        const dataRes = getDataRichiesta(r)
+                        return (
+                          <tr key={r.id} onClick={() => setSelected(r)} className="hover:bg-mist cursor-pointer transition-colors">
+                            <td className="px-4 py-3 font-medium text-ink-navy/70">{r.clienteName}</td>
+                            <td className="px-4 py-3 text-ink-navy/50">{dataRes ? new Date(dataRes+'T12:00:00Z').toLocaleDateString('it-IT',{day:'numeric',month:'short',year:'numeric'}) : new Date(r.createdAt).toLocaleDateString('it-IT')}</td>
+                            <td className="px-4 py-3 text-center">
+                              <span className={`text-xs font-semibold px-2 py-1 rounded-full ${STATUS_COLORS[r.status] ?? 'bg-mist text-ink-navy/60'}`}>
+                                {STATUS_LABELS[r.status] ?? r.status}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
       )}
 
