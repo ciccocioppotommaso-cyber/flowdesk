@@ -43,9 +43,11 @@ export async function POST(req: Request) {
   const label = tavoliGruppo.map(t => t.numero).sort((a, b) => a - b).join('+')
   await prisma.gruppoTavoli.update({ where: { id: gruppoId }, data: { label } })
 
-  // Aggancio gli ordini aperti di questi tavoli al gruppo (restano sottogruppi separati)
+  // Aggancio gli ordini aperti di questi tavoli al gruppo (restano sottogruppi separati).
+  // Per i tavoli solo 'chiuso' è concluso: 'consegnato' (servito al tavolo) va comunque unito,
+  // altrimenti resterebbe un conto separato accanto a quello unito.
   await prisma.ordine.updateMany({
-    where: { userId: user.id, tavoloId: { in: tavoliGruppo.map(t => t.id) }, status: { notIn: ['chiuso', 'consegnato'] } },
+    where: { userId: user.id, tavoloId: { in: tavoliGruppo.map(t => t.id) }, status: { notIn: ['chiuso'] } },
     data: { gruppoId, tavolo: `T${label}` },
   })
 

@@ -602,7 +602,9 @@ export default function ContiPage() {
               {pagatiN > 0 && <span className="text-green-600 font-semibold"> · {pagatiN} pagat{pagatiN === 1 ? 'o' : 'i'}</span>}
             </span>
           </label>
-          <span className={`text-sm font-bold ${chiuso ? 'text-ink-navy/50' : 'text-ink-navy'}`}>{fmt(conto.totale)}</span>
+          {/* Con un solo sottogruppo il totale del conto coincide con quello del sottogruppo (mostrato sotto):
+              lo nascondo per non ripetere la stessa cifra due volte. */}
+          {n > 1 && <span className={`text-sm font-bold ${chiuso ? 'text-ink-navy/50' : 'text-ink-navy'}`}>{fmt(conto.totale)}</span>}
         </div>
 
         {/* Sottogruppi */}
