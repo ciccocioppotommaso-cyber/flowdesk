@@ -407,6 +407,14 @@ export default function Calendario() {
               const appsConfermati = dayApps.filter(a => a.status === 'confermato')
               const totalCoperti = appsConfermati.reduce((s, a) => s + (a.coperti ?? 1), 0)
 
+              // Layout calcolato una volta sola + larghezza minima per casella:
+              // se in una fascia ci sono troppe prenotazioni affiancate, la lane si allarga
+              // (min-width in px) e il contenitore scorre orizzontalmente invece di stringere le caselle.
+              const laid = layoutApps(dayApps)
+              const MIN_COL_W = 130
+              const maxTotal = Math.max(1, ...laid.map(x => x.total))
+              const laneMinWidth = maxTotal * MIN_COL_W
+
               return (
                 <>
                   {totalCoperti > 0 && (
@@ -432,14 +440,14 @@ export default function Calendario() {
                           ))}
                         </div>
                         <div className="relative flex-1"
-                          style={{ height: (hourEnd - hourStart) * PX_PER_HOUR }}>
+                          style={{ height: (hourEnd - hourStart) * PX_PER_HOUR, minWidth: laneMinWidth }}>
                           {hoursGrid.map(h => (
                             <div key={h}>
                               <div className="absolute left-0 right-0 border-t border-ink-navy/8" style={{ top: (h - hourStart) * PX_PER_HOUR }} />
                               <div className="absolute left-0 right-0 border-t border-dashed border-ink-navy/5" style={{ top: (h - hourStart) * PX_PER_HOUR + PX_PER_HOUR / 2 }} />
                             </div>
                           ))}
-                          {layoutApps(dayApps).map(({ a, col: subCol, total }) => {
+                          {laid.map(({ a, col: subCol, total }) => {
                             const tipo = inferTipo(a.servizio)
                             const ts = TIPO_STYLE[tipo]
                             const sc = STATUS_COLORS[a.status] ?? STATUS_COLORS.confermato
@@ -757,47 +765,7 @@ export default function Calendario() {
                       onChange={e => setFormApp(f => ({ ...f, occasione: e.target.value }))} className={inp} />
                   </div>
                 </div>
-                {tavoli.length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-sm font-medium text-ink-navy/70">Tavoli</label>
-                      {(() => {
-                        const ids: string[] = (() => { try { return formApp.tavoloId ? JSON.parse(formApp.tavoloId) : [] } catch { return formApp.tavoloId ? [formApp.tavoloId] : [] } })()
-                        return ids.length >= 2 ? <span className="text-xs font-bold text-orange-600">T{tavoli.filter(t=>ids.includes(t.id)).sort((a,b)=>a.numero-b.numero).map(t=>t.numero).join('+')} — fusi</span> : null
-                      })()}
-                    </div>
-                    <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                      {tavoli.map(t => {
-                        const selIds: string[] = (() => { try { return formApp.tavoloId ? JSON.parse(formApp.tavoloId) : [] } catch { return formApp.tavoloId ? [formApp.tavoloId] : [] } })()
-                        const checked = selIds.includes(t.id)
-                        const selStart = formApp.data && formApp.ora ? new Date(`${formApp.data}T${formApp.ora}`).getTime() : null
-                        const selEnd = selStart ? selStart + formApp.durata * 60000 : null
-                        const occupato = !checked && selStart !== null && selEnd !== null && appuntamenti.some(a => {
-                          if (a.status === 'cancellato') return false
-                          const usa = a.tavoloId === t.id || (() => { try { return (JSON.parse(a.tavoliIds ?? '[]') as string[]).includes(t.id) } catch { return false } })()
-                          if (!usa) return false
-                          const aStart = new Date(a.data).getTime()
-                          return aStart < selEnd! && (aStart + a.durata * 60000) > selStart!
-                        })
-                        return (
-                          <label key={t.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg border transition-colors ${occupato ? 'border-red-200 bg-red-50 cursor-not-allowed opacity-60' : checked ? 'border-electric-blue/40 bg-electric-blue/10 cursor-pointer' : 'border-ink-navy/10 hover:bg-mist cursor-pointer'}`}>
-                            <input type="checkbox" checked={checked} disabled={occupato}
-                              onChange={e => {
-                                const newIds = e.target.checked ? [...selIds, t.id] : selIds.filter(id => id !== t.id)
-                                setFormApp(f => ({ ...f, tavoloId: newIds.length === 0 ? '' : newIds.length === 1 ? newIds[0] : JSON.stringify(newIds) }))
-                              }}
-                              className="accent-electric-blue w-4 h-4 shrink-0" />
-                            <span className="text-sm text-ink-navy/70 flex-1">
-                              <span className="font-semibold">T{t.numero}</span>
-                              <span className="text-ink-navy/35"> · {t.posti}p{t.note ? ` · ${t.note}` : ''}</span>
-                            </span>
-                            {occupato && <span className="text-xs text-red-500">occupato</span>}
-                          </label>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
+                {/* Assegnazione tavolo rimossa dalla creazione: la prenotazione nasce senza tavolo */}
                 <div>
                   <label className="block text-sm font-medium text-ink-navy/70 mb-1">Note interne</label>
                   <textarea value={formApp.note} onChange={e => setFormApp(f => ({ ...f, note: e.target.value }))}
