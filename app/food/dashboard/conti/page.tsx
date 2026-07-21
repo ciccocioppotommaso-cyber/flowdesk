@@ -540,7 +540,9 @@ export default function ContiPage() {
             <span className="text-xs text-ink-navy/40 shrink-0">{ora}</span>
           </label>
           <div className="flex items-center gap-2 shrink-0">
-            <span className="text-sm text-ink-navy/60">{fmt(o.totale)}</span>
+            {/* Totale del sottogruppo solo con più voci: con una sola voce coincide con
+                il prezzo della riga (mostrato sotto) → sarebbe la stessa cifra due volte */}
+            {o.righe.length > 1 && <span className="text-sm text-ink-navy/60">{fmt(o.totale)}</span>}
             {chiuso ? (
               confermaElimina === o.id ? (
                 <div className="flex items-center gap-1.5">
