@@ -32,6 +32,7 @@ export async function GET(req: Request) {
   const pazienti = await prisma.paziente.findMany({
     where: { userId: user.id, ...(includeCancellati ? {} : { cancellato: false }) },
     orderBy: { createdAt: 'desc' },
+    include: { _count: { select: { sedute: true } } },
   })
 
   return NextResponse.json({ pazienti })

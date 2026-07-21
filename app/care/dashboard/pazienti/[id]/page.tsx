@@ -7,13 +7,6 @@ import {
   IconPencil, IconTrash, IconCalendar, IconClipboard, IconFolder, IconArrowRight,
 } from '@/app/components/icons'
 
-const STATUS = [
-  { id: 'nuovo', label: 'Nuovo paziente', color: 'bg-sky-100 text-sky-700' },
-  { id: 'in_cura', label: 'In cura', color: 'bg-teal-100 text-teal-700' },
-  { id: 'follow_up', label: 'Follow-up', color: 'bg-amber-100 text-amber-700' },
-  { id: 'dimesso', label: 'Dimesso', color: 'bg-emerald-100 text-emerald-700' },
-]
-
 interface Paziente {
   id: string
   nome: string
@@ -21,7 +14,6 @@ interface Paziente {
   telefono?: string
   dataNascita?: string
   note?: string
-  status: string
   createdAt: string
 }
 
@@ -92,15 +84,6 @@ export default function PazienteDetailPage() {
 
   useEffect(() => { fetchAll() }, [id])
 
-  async function handleStatusChange(status: string) {
-    await fetch(`/api/pazienti/${id}`, {
-      method: 'PATCH', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    })
-    fetchAll()
-  }
-
   async function handleSaveEdit() {
     await fetch(`/api/pazienti/${id}`, {
       method: 'PATCH', credentials: 'include',
@@ -151,7 +134,6 @@ export default function PazienteDetailPage() {
   if (loading) return <div className="text-center text-ink-navy/35 py-16">Caricamento...</div>
   if (!paziente) return <div className="text-center text-ink-navy/35 py-16">Paziente non trovato</div>
 
-  const statusInfo = STATUS.find(s => s.id === paziente.status) ?? STATUS[0]
   const prossimi = appuntamenti.filter(a => new Date(a.data) >= new Date() && a.status !== 'cancellato')
 
   return (
@@ -165,9 +147,7 @@ export default function PazienteDetailPage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-extrabold text-ink-navy">{paziente.nome}</h1>
-            <span className={`inline-block mt-2 text-xs px-2.5 py-1 rounded-full font-semibold ${statusInfo.color}`}>
-              {statusInfo.label}
-            </span>
+            <p className="text-sm text-ink-navy/40 mt-1">Paziente dal {fmtData(paziente.createdAt)}</p>
           </div>
           <div className="flex gap-2 shrink-0">
             <button onClick={() => { setEditForm({ nome: paziente.nome, email: paziente.email ?? '', telefono: paziente.telefono ?? '', dataNascita: paziente.dataNascita ? paziente.dataNascita.slice(0, 10) : '', note: paziente.note ?? '' }); setEditing(true) }}
@@ -220,7 +200,6 @@ export default function PazienteDetailPage() {
             {paziente.email && <p><span className="text-ink-navy/40 w-20 inline-block">Email</span><span className="text-ink-navy font-medium">{paziente.email}</span></p>}
             {paziente.telefono && <p><span className="text-ink-navy/40 w-20 inline-block">Telefono</span><span className="text-ink-navy font-medium">{paziente.telefono}</span></p>}
             {paziente.dataNascita && <p><span className="text-ink-navy/40 w-20 inline-block">Nato il</span><span className="text-ink-navy font-medium">{fmtData(paziente.dataNascita)}</span></p>}
-            <p><span className="text-ink-navy/40 w-20 inline-block">Paziente dal</span><span className="text-ink-navy font-medium">{fmtData(paziente.createdAt)}</span></p>
             {paziente.note && (
               <div className="sm:col-span-2 bg-mist rounded-lg px-3 py-2 mt-1">
                 <p className="text-xs font-semibold text-ink-navy/40 uppercase tracking-wider mb-1">Anamnesi</p>
@@ -229,19 +208,6 @@ export default function PazienteDetailPage() {
             )}
           </div>
         )}
-
-        {/* Sposta in */}
-        <div className="mt-5 border-t border-ink-navy/8 pt-4">
-          <p className="text-xs font-semibold text-ink-navy/35 uppercase tracking-wider mb-2">Sposta in</p>
-          <div className="flex flex-wrap gap-2">
-            {STATUS.map(s => (
-              <button key={s.id} onClick={() => handleStatusChange(s.id)}
-                className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${paziente.status === s.id ? s.color : 'bg-mist text-ink-navy/60 hover:bg-ink-navy/10'}`}>
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       {/* Prossimi appuntamenti */}

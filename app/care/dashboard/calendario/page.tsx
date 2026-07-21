@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { IconTrash, IconArrowRight } from '@/app/components/icons'
+import { IconTrash, IconArrowRight, IconClock } from '@/app/components/icons'
 
 const GIORNI_BREVI = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom']
+const GIORNI_CODICE = ['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom']
 const MESI = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
 
 const STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> = {
@@ -54,6 +55,15 @@ function addDays(d: Date, n: number) {
 function isSameDay(a: Date, b: Date) {
   return a.getDate() === b.getDate() && a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear()
 }
+function toDateStr(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+interface Override {
+  id: string
+  data: string
+  slots: string
+}
 
 export default function CalendarioPage() {
   const [appuntamenti, setAppuntamenti] = useState<Appuntamento[]>([])
@@ -64,17 +74,32 @@ export default function CalendarioPage() {
   const [seduteStorico, setSeduteStorico] = useState<Seduta[]>([])
   const [showNuovo, setShowNuovo] = useState<Date | null>(null)
   const [form, setForm] = useState({ pazienteId: '', clienteNome: '', servizio: '', ora: '09:00', durata: '45', note: '' })
+  const [orariSettimanali, setOrariSettimanali] = useState<Record<string, string>>({})
+  const [overrides, setOverrides] = useState<Override[]>([])
+  const [modalOrari, setModalOrari] = useState<Date | null>(null)
+  const [formOrariGiorno, setFormOrariGiorno] = useState('')
 
   async function fetchAll() {
-    const [aRes, pRes] = await Promise.all([
+    const [aRes, pRes, sRes] = await Promise.all([
       fetch('/api/appuntamenti', { credentials: 'include', cache: 'no-store' }),
       fetch('/api/pazienti', { credentials: 'include', cache: 'no-store' }),
+      fetch('/api/settings', { credentials: 'include', cache: 'no-store' }),
     ])
     const aData = await aRes.json()
     const pData = await pRes.json()
+    const sData = await sRes.json()
     setAppuntamenti(aData.appuntamenti ?? [])
     setPazienti(pData.pazienti ?? [])
+    try { setOrariSettimanali(JSON.parse(sData.orariApertura ?? '{}')) } catch { setOrariSettimanali({}) }
     setLoading(false)
+  }
+
+  async function fetchOverrides(start: Date) {
+    const da = toDateStr(start)
+    const a = toDateStr(addDays(start, 6))
+    const res = await fetch(`/api/disponibilita-override?da=${da}&a=${a}`, { credentials: 'include', cache: 'no-store' })
+    const data = await res.json()
+    setOverrides(data.override ?? [])
   }
 
   useEffect(() => {
@@ -82,6 +107,45 @@ export default function CalendarioPage() {
     const interval = setInterval(fetchAll, 15000)
     return () => clearInterval(interval)
   }, [])
+
+  useEffect(() => { fetchOverrides(weekStart) }, [weekStart])
+
+  function orarioEffettivo(day: Date): { testo: string; override: Override | null } {
+    const dateStr = toDateStr(day)
+    const ov = overrides.find(o => o.data.slice(0, 10) === dateStr)
+    if (ov) {
+      const slots: string[] = (() => { try { return JSON.parse(ov.slots) } catch { return [] } })()
+      return { testo: slots.length ? slots.join(', ') : 'Chiuso', override: ov }
+    }
+    const codice = GIORNI_CODICE[(day.getDay() + 6) % 7]
+    return { testo: orariSettimanali[codice] || 'Chiuso', override: null }
+  }
+
+  function apriModalOrari(day: Date) {
+    const { testo } = orarioEffettivo(day)
+    setFormOrariGiorno(testo === 'Chiuso' ? '' : testo)
+    setModalOrari(day)
+  }
+
+  async function salvaOrarioGiorno() {
+    if (!modalOrari) return
+    const slots = formOrariGiorno.split(',').map(s => s.trim()).filter(Boolean)
+    await fetch('/api/disponibilita-override', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: toDateStr(modalOrari), slots }),
+    })
+    setModalOrari(null)
+    fetchOverrides(weekStart)
+  }
+
+  async function ripristinaOrarioStandard() {
+    if (!modalOrari) return
+    const { override } = orarioEffettivo(modalOrari)
+    if (override) await fetch(`/api/disponibilita-override/${override.id}`, { method: 'DELETE', credentials: 'include' })
+    setModalOrari(null)
+    fetchOverrides(weekStart)
+  }
 
   async function openSelected(a: Appuntamento) {
     setSelected(a)
@@ -175,6 +239,12 @@ export default function CalendarioPage() {
                 <div className={`text-center pb-2 mb-2 border-b-2 ${isToday ? 'border-electric-blue' : 'border-ink-navy/10'}`}>
                   <p className="text-[10px] font-semibold text-ink-navy/35 uppercase tracking-wider">{GIORNI_BREVI[i]}</p>
                   <p className={`text-lg font-bold ${isToday ? 'text-electric-blue' : 'text-ink-navy'}`}>{day.getDate()}</p>
+                  <button onClick={() => apriModalOrari(day)}
+                    className={`mt-1 inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full transition-colors ${orarioEffettivo(day).override ? 'bg-zest-lime/25 text-ink-navy' : 'text-ink-navy/30 hover:text-electric-blue'}`}
+                    title={orarioEffettivo(day).testo}>
+                    <span className="w-2.5 h-2.5"><IconClock /></span>
+                    {orarioEffettivo(day).testo === 'Chiuso' ? 'Chiuso' : 'Orari'}
+                  </button>
                 </div>
                 <div className="space-y-1.5">
                   {dayApps.map(a => {
@@ -327,6 +397,34 @@ export default function CalendarioPage() {
               <button onClick={() => setShowNuovo(null)} className="flex-1 border border-ink-navy/15 text-ink-navy/70 font-semibold py-2.5 rounded-lg hover:bg-mist">Annulla</button>
               <button onClick={handleCreate} disabled={!form.pazienteId && !form.clienteNome.trim()}
                 className="flex-1 bg-electric-blue text-white font-semibold py-2.5 rounded-lg hover:bg-electric-blue/90 disabled:opacity-40">Salva</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal orari del giorno */}
+      {modalOrari && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+            <h2 className="text-lg font-bold text-ink-navy">
+              Orari — {modalOrari.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </h2>
+            <div>
+              <label className="block text-sm font-medium text-ink-navy/70 mb-1">Fasce orarie disponibili</label>
+              <input value={formOrariGiorno} onChange={e => setFormOrariGiorno(e.target.value)}
+                placeholder="08:00-14:00, 16:00-18:00"
+                className="w-full border border-ink-navy/15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-electric-blue" />
+              <p className="text-xs text-ink-navy/35 mt-1">Lascia vuoto per segnare la giornata come chiusa. Separa più fasce con una virgola.</p>
+            </div>
+            <div className="flex gap-3">
+              {orarioEffettivo(modalOrari).override && (
+                <button onClick={ripristinaOrarioStandard}
+                  className="text-sm text-ink-navy/50 font-semibold px-3 hover:text-electric-blue">
+                  Ripristina standard
+                </button>
+              )}
+              <button onClick={() => setModalOrari(null)} className="flex-1 border border-ink-navy/15 text-ink-navy/70 font-semibold py-2.5 rounded-lg hover:bg-mist">Annulla</button>
+              <button onClick={salvaOrarioGiorno} className="flex-1 bg-electric-blue text-white font-semibold py-2.5 rounded-lg hover:bg-electric-blue/90">Salva</button>
             </div>
           </div>
         </div>
