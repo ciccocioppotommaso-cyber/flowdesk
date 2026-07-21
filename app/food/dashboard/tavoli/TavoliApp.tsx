@@ -297,7 +297,9 @@ const VistaMappa = forwardRef<VistaMappHandle, {
   tavoloCarryMap?: Map<string, { carryIn: boolean; carryOut: boolean }>
   tavoloAppsMap?: Map<string, (AppuntamentoLight & { carryIn: boolean; carryOut: boolean })[]>
   onTavoloClick?: (tavoloId: string, gruppoId: string | null, label: string) => void
-}>(function VistaMappa({ tavoli, gruppi, salaAttiva, elementi, onSaveElementi, onModifica, onElimina, selectMode, selectedIds, onToggleSelect, onSciogliGruppo, tavoloAppMap, tavoloCarryMap, tavoloAppsMap, onTavoloClick }, ref) {
+  tavoliOccupati?: Set<string>   // tavoli con conto aperto → bordo attivo
+  tavoliPronti?: Set<string>     // tavoli con un ordine pronto non ancora visto → triangolino
+}>(function VistaMappa({ tavoli, gruppi, salaAttiva, elementi, onSaveElementi, onModifica, onElimina, selectMode, selectedIds, onToggleSelect, onSciogliGruppo, tavoloAppMap, tavoloCarryMap, tavoloAppsMap, onTavoloClick, tavoliOccupati, tavoliPronti }, ref) {
   const [editMode, setEditMode] = useState(false)
   const [hoveredTavoloId, setHoveredTavoloId] = useState<string | null>(null)
   const [zoom, setZoom] = useState(() => {
@@ -575,11 +577,15 @@ const VistaMappa = forwardRef<VistaMappHandle, {
                     </div>
                   )}
                   {isSelected && <div style={{ position: 'absolute', inset: -5, borderRadius: isC ? '50%' : 14, border: '3px solid #6366f1', pointerEvents: 'none', zIndex: 5 }} />}
-                  {tavoloAppMap && !isSelected && (
-                    <div style={{ position: 'absolute', inset: -4, borderRadius: isC ? '50%' : 13, border: `2.5px ${isFusoPerTurno ? 'dashed #f97316' : `solid ${isOccupato ? '#ef4444' : '#22c55e'}`}`, pointerEvents: 'none', zIndex: 4, opacity: 0.85 }} />
+                  {!isSelected && tavoliOccupati?.has(t.id) && (
+                    <div style={{ position: 'absolute', inset: -4, borderRadius: isC ? '50%' : 13, border: '2.5px solid #ef4444', pointerEvents: 'none', zIndex: 4, opacity: 0.9 }} />
                   )}
-                  {gruppo && !isSelected && !isFusoPerTurno && (
+                  {gruppo && !isSelected && (
                     <div style={{ position: 'absolute', inset: -4, borderRadius: isC ? '50%' : 13, border: '2.5px dashed #f97316', pointerEvents: 'none', zIndex: 4 }} />
+                  )}
+                  {/* Triangolino "ordine pronto" (sparisce una volta aperto il tavolo) */}
+                  {tavoliPronti?.has(t.id) && (
+                    <div title="Ordine pronto" style={{ position: 'absolute', top: -13, left: '50%', transform: 'translateX(-50%)', zIndex: 31, width: 0, height: 0, borderLeft: '9px solid transparent', borderRight: '9px solid transparent', borderBottom: '15px solid #ef4444', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.35))' }} />
                   )}
                   <div data-drag={editMode && !selectMode ? "1" : undefined}
                     onMouseDown={editMode && !selectMode ? e => startDragT(e, t.id) : selectMode ? e => { e.stopPropagation(); onToggleSelect(t.id) } : undefined}
@@ -619,8 +625,11 @@ interface AppuntamentoLight { id: string; clienteNome?: string; data: string; du
 
 function toMinutes(hhmm: string) { const [h, m] = hhmm.split(':').map(Number); const v = h * 60 + m; return v === 0 ? 1440 : v }
 
-// ── Pagina ────────────────────────────────────────────────────────────────────
-export default function TavoliPage() {
+// ── Componente condiviso tra la pagina "live" e la pagina "gestione" ──────────
+// mode='live'     → solo mappa live + switch sala (niente editor/lista/turni)
+// mode='gestione' → editor mappa + lista tavoli + QR + unisci/sciogli tavoli
+export function TavoliApp({ mode }: { mode: 'live' | 'gestione' }) {
+  const gestione = mode === 'gestione'
   const [vista, setVista] = useState<'mappa' | 'lista' | 'conto'>('mappa')
   const [ordiniAperti, setOrdiniAperti] = useState<Ordine[]>([])
   const [ordiniChiusi, setOrdiniChiusi] = useState<Ordine[]>([])
@@ -641,6 +650,18 @@ export default function TavoliPage() {
   // Modal conto da mappa
   const [contoModal, setContoModal] = useState<{ tavoloId: string; gruppoId: string | null; label: string } | null>(null)
   const [contoModificaOrdine, setContoModificaOrdine] = useState<Ordine | null>(null)
+
+  // Triangolini "ordine pronto": si nascondono una volta aperto il tavolo (flag lato client)
+  const [visti, setVisti] = useState<Set<string>>(new Set())
+  useEffect(() => { try { setVisti(new Set(JSON.parse(localStorage.getItem('tavoli_pronti_visti') ?? '[]'))) } catch {} }, [])
+  function segnaVisti(ids: string[]) {
+    if (ids.length === 0) return
+    setVisti(prev => {
+      const n = new Set(prev); ids.forEach(i => n.add(i))
+      try { localStorage.setItem('tavoli_pronti_visti', JSON.stringify([...n])) } catch {}
+      return n
+    })
+  }
 
   // Modal modifica
   const [conferma, setConferma] = useState<{ msg: string; onConfirm: () => void } | null>(null)
@@ -742,18 +763,9 @@ export default function TavoliPage() {
     fetchSale().then(() => fetchTavoli())
     fetch('/api/me', { credentials: 'include' }).then(r => r.json()).then(d => {
       setPublicId(d.user?.publicId ?? null)
-      try {
-        const ts = JSON.parse(d.user?.turniServizio ?? '[]')
-        ts.sort((a: TurnoServizio, b: TurnoServizio) => toMinutes(a.oraInizio) - toMinutes(b.oraInizio))
-        setTurniServizio(ts)
-        const now = new Date()
-        const nowMin = now.getHours() * 60 + now.getMinutes()
-        const corrente = ts.find((t: TurnoServizio) => toMinutes(t.oraInizio) <= nowMin && toMinutes(t.oraFine) > nowMin)
-        const prossimo = ts.find((t: TurnoServizio) => toMinutes(t.oraInizio) > nowMin)
-        const selezionato = (corrente ?? prossimo ?? ts[0])?.id ?? null
-        setTurnoSel(selezionato)
-        fetchGruppi(giornoSelRef.current, selezionato)
-      } catch { fetchGruppi(giornoSelRef.current, null) }
+      // Turni rimossi dalla mappa: gruppi sempre per giorno, senza filtro turno
+      setTurnoSel(null)
+      fetchGruppi(giornoSelRef.current, null)
     }).catch(() => {})
     fetch('/api/appuntamenti', { credentials: 'include', cache: 'no-store' }).then(r => r.json()).then(d => setAppuntamenti(d.appuntamenti ?? [])).catch(() => {})
     fetchOrdini()
@@ -780,40 +792,20 @@ export default function TavoliPage() {
     if (salaAttivaId) saveSalaElementi(salaAttivaId, el)
   }
 
-  // Appuntamenti filtrati per giorno+turno
-  const turnoAttivo = turniServizio.find(t => t.id === turnoSel)
-  const appTurno: AppuntamentoLight[] = (() => {
-    if (!giornoSel) return []
-    return appuntamenti.filter(a => {
-      if (a.status === 'cancellato') return false
-      const dLocal = new Date(new Date(a.data).toLocaleString('en-US', { timeZone: 'Europe/Rome' }))
-      const dStr = `${dLocal.getFullYear()}-${String(dLocal.getMonth() + 1).padStart(2, '0')}-${String(dLocal.getDate()).padStart(2, '0')}`
-      if (dStr !== giornoSel) return false
-      if (!turnoAttivo) return true
-      const appInizio = dLocal.getHours() * 60 + dLocal.getMinutes()
-      const appFine = appInizio + (a.durata ?? 90)
-      const inizioT = toMinutes(turnoAttivo.oraInizio)
-      const fineT = toMinutes(turnoAttivo.oraFine)
-      if (inizioT > fineT) return appInizio >= inizioT || appInizio < fineT
-      return appInizio < fineT && appFine > inizioT
-    })
-  })()
-
+  // Turni/prenotazioni rimossi dalla mappa: mappe prenotazione sempre vuote
   const tavoloAppsMap = new Map<string, (AppuntamentoLight & { carryIn: boolean; carryOut: boolean })[]>()
-  appTurno.forEach(a => {
-    const ids: string[] = (() => { try { return a.tavoliIds ? JSON.parse(a.tavoliIds) : (a.tavoloId ? [a.tavoloId] : []) } catch { return a.tavoloId ? [a.tavoloId] : [] } })()
-    const dLocal = new Date(new Date(a.data).toLocaleString('en-US', { timeZone: 'Europe/Rome' }))
-    const appInizio = dLocal.getHours() * 60 + dLocal.getMinutes()
-    const appFine = appInizio + (a.durata ?? 90)
-    const inizioT = turnoAttivo ? toMinutes(turnoAttivo.oraInizio) : 0
-    const fineT = turnoAttivo ? toMinutes(turnoAttivo.oraFine) : 1440
-    const carryIn = !!turnoAttivo && appInizio < inizioT
-    const carryOut = !!turnoAttivo && appFine > fineT
-    ids.forEach(id => { const existing = tavoloAppsMap.get(id) ?? []; existing.push({ ...a, carryIn, carryOut }); tavoloAppsMap.set(id, existing) })
-  })
   const tavoloAppMap = new Map<string, AppuntamentoLight>()
   const tavoloCarryMap = new Map<string, { carryIn: boolean; carryOut: boolean }>()
-  tavoloAppsMap.forEach((apps, id) => { tavoloAppMap.set(id, apps[0]); tavoloCarryMap.set(id, { carryIn: apps[0].carryIn, carryOut: apps[apps.length - 1].carryOut }) })
+
+  // Stato live dei tavoli: occupati (conto aperto) e pronti (ordine pronto non ancora visto)
+  const tavoliDiGruppo = (gruppoId: string) => gruppi.find(g => g.id === gruppoId)?.tavoli.map(t => t.id) ?? []
+  const tavoliOccupati = new Set<string>()
+  const tavoliPronti = new Set<string>()
+  ordiniAperti.forEach(o => {
+    const ids = o.gruppoId ? tavoliDiGruppo(o.gruppoId) : (o.tavoloId ? [o.tavoloId] : [])
+    ids.forEach(id => tavoliOccupati.add(id))
+    if ((o.status === 'consegnato' || o.status === 'pronto') && !visti.has(o.id)) ids.forEach(id => tavoliPronti.add(id))
+  })
 
   function toggleSelect(id: string) { setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]) }
 
@@ -899,17 +891,26 @@ export default function TavoliPage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-ink-navy">Tavoli</h1>
-          <p className="text-ink-navy/50 text-sm mt-0.5">Disegna la piantina e gestisci i QR code</p>
+          <h1 className="text-2xl font-bold text-ink-navy">{gestione ? 'Gestione tavoli' : 'Tavoli'}</h1>
+          <p className="text-ink-navy/50 text-sm mt-0.5">{gestione ? 'Disegna la piantina, gestisci QR e unione tavoli' : 'Situazione live delle sale'}</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => { setSelectMode(v => !v); setSelectedIds([]) }}
-            className={`font-semibold px-4 py-2 rounded-xl text-sm border transition-colors ${selectMode ? 'bg-electric-blue/15 border-electric-blue/40 text-electric-blue' : 'bg-white border-ink-navy/15 text-ink-navy/70 hover:bg-mist'}`}>
-            {selectMode ? '✕ Esci selezione' : 'Fondi tavoli'}
-          </button>
-          <button onClick={apriNuovoTavolo} className="bg-electric-blue text-white font-semibold px-4 py-2 rounded-xl text-sm hover:bg-electric-blue/90 shadow-sm">
-            + Nuovo tavolo
-          </button>
+          {gestione ? (
+            <>
+              <a href="/food/dashboard/tavoli"
+                className="font-semibold px-4 py-2 rounded-xl text-sm border bg-white border-ink-navy/15 text-ink-navy/70 hover:bg-mist transition-colors">← Mappa live</a>
+              <button onClick={() => { setSelectMode(v => !v); setSelectedIds([]) }}
+                className={`font-semibold px-4 py-2 rounded-xl text-sm border transition-colors ${selectMode ? 'bg-electric-blue/15 border-electric-blue/40 text-electric-blue' : 'bg-white border-ink-navy/15 text-ink-navy/70 hover:bg-mist'}`}>
+                {selectMode ? '✕ Esci selezione' : 'Unisci tavoli'}
+              </button>
+              <button onClick={apriNuovoTavolo} className="bg-electric-blue text-white font-semibold px-4 py-2 rounded-xl text-sm hover:bg-electric-blue/90 shadow-sm">
+                + Nuovo tavolo
+              </button>
+            </>
+          ) : (
+            <a href="/food/dashboard/tavoli/gestione"
+              className="bg-electric-blue text-white font-semibold px-4 py-2 rounded-xl text-sm hover:bg-electric-blue/90 shadow-sm transition-colors">Gestione mappa →</a>
+          )}
         </div>
       </div>
 
@@ -921,19 +922,18 @@ export default function TavoliPage() {
 
       {selBanner}
 
-      {/* Tab switch + Sale */}
+      {/* Tab Mappa/Lista (solo gestione) + switch sale (entrambe le pagine) */}
       <div className="flex items-center gap-2 flex-wrap">
-        {[{ k: 'mappa', l: 'Mappa' }, { k: 'lista', l: 'Lista' }].map(t => (
+        {gestione && [{ k: 'mappa', l: 'Mappa' }, { k: 'lista', l: 'Lista' }].map(t => (
           <button key={t.k} onClick={() => setVista(t.k as 'mappa' | 'lista')}
             className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${vista === t.k ? 'bg-electric-blue text-white' : 'bg-white border border-ink-navy/15 text-ink-navy/60 hover:bg-mist'}`}>
             {t.l}
           </button>
         ))}
 
-        {/* Separatore + tab sale (solo in mappa) */}
-        {vista === 'mappa' && sale.length > 0 && (
+        {(!gestione || vista === 'mappa') && sale.length > 0 && (
           <>
-            <div className="w-px h-5 bg-ink-navy/15 mx-1" />
+            {gestione && <div className="w-px h-5 bg-ink-navy/15 mx-1" />}
             {sale.map(s => (
               <button key={s.id} onClick={() => setSalaAttivaId(s.id)}
                 className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${salaAttivaId === s.id ? 'bg-ink-navy text-white' : 'bg-white border border-ink-navy/15 text-ink-navy/60 hover:bg-mist'}`}>
@@ -941,43 +941,13 @@ export default function TavoliPage() {
                 {(s._count?.tavoli ?? 0) > 0 && <span className="ml-1.5 text-xs opacity-60">{s._count?.tavoli}</span>}
               </button>
             ))}
-            <button onClick={() => setShowSale(true)}
-              className="px-3 py-1.5 rounded-full text-sm font-medium bg-white border border-dashed border-ink-navy/20 text-ink-navy/40 hover:bg-mist hover:border-ink-navy/30 transition-colors">
-              + Sala
-            </button>
+            {gestione && (
+              <button onClick={() => setShowSale(true)}
+                className="px-3 py-1.5 rounded-full text-sm font-medium bg-white border border-dashed border-ink-navy/20 text-ink-navy/40 hover:bg-mist hover:border-ink-navy/30 transition-colors">
+                + Sala
+              </button>
+            )}
           </>
-        )}
-      </div>
-
-      {/* Selettore giorno + turno */}
-      <div className="bg-white border border-ink-navy/10 rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Giorno</span>
-          <input type="date" value={giornoSel} onChange={e => setGiornoSel(e.target.value)}
-            className="border border-ink-navy/15 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-electric-blue" />
-          <button onClick={() => setGiornoSel((() => { const _d = new Date(); return `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}` })())}
-            className="text-xs text-electric-blue font-semibold px-2 py-1 border border-electric-blue/25 rounded-lg hover:bg-electric-blue/10">Oggi</button>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-semibold text-ink-navy/50 uppercase tracking-wider">Turno</span>
-          {turniServizio.map(t => (
-            <button key={t.id} onClick={() => setTurnoSel(t.id)}
-              className={`text-sm font-semibold px-3 py-1 rounded-full transition-colors ${turnoSel === t.id ? 'bg-electric-blue text-white' : 'bg-mist text-ink-navy/60 hover:bg-ink-navy/10'}`}>
-              {t.nome} <span className="text-xs opacity-70">{t.oraInizio}–{t.oraFine}</span>
-            </button>
-          ))}
-          {turniServizio.length > 0 && (
-            <button onClick={() => setTurnoSel(null)}
-              className={`text-sm font-semibold px-3 py-1 rounded-full transition-colors ${turnoSel === null ? 'bg-gray-700 text-white' : 'bg-mist text-ink-navy/50 hover:bg-ink-navy/10'}`}>
-              Tutti
-            </button>
-          )}
-          <a href="/food/dashboard/impostazioni?sezione=turni" className="text-xs text-ink-navy/35 hover:text-electric-blue font-medium px-2 py-1 border border-ink-navy/10 rounded-lg hover:border-electric-blue/40 hover:bg-electric-blue/10 transition-colors">Gestisci turni</a>
-        </div>
-        {appTurno.length > 0 && (
-          <span className="ml-auto text-xs font-semibold text-electric-blue bg-electric-blue/10 px-2 py-1 rounded-full">
-            {appTurno.length} prenotazion{appTurno.length === 1 ? 'e' : 'i'}
-          </span>
         )}
       </div>
 
@@ -992,60 +962,89 @@ export default function TavoliPage() {
               onModifica={apriModifica} onElimina={eliminaTavolo}
               selectMode={selectMode} selectedIds={selectedIds} onToggleSelect={toggleSelect}
               onSciogliGruppo={sciogliGruppo} tavoloAppMap={tavoloAppMap} tavoloCarryMap={tavoloCarryMap} tavoloAppsMap={tavoloAppsMap}
-              onTavoloClick={(tid, gid, lbl) => setContoModal({ tavoloId: tid, gruppoId: gid, label: lbl })} />
+              tavoliOccupati={tavoliOccupati} tavoliPronti={tavoliPronti}
+              onTavoloClick={(tid, gid, lbl) => {
+                // aprendo il tavolo, segna come visti i suoi ordini pronti → il triangolino sparisce
+                const daVedere = ordiniAperti
+                  .filter(o => (o.status === 'consegnato' || o.status === 'pronto') && (gid ? o.gruppoId === gid : (o.tavoloId === tid && !o.gruppoId)))
+                  .map(o => o.id)
+                segnaVisti(daVedere)
+                setContoModal({ tavoloId: tid, gruppoId: gid, label: lbl })
+              }} />
           </div>
-          <div className={vista !== 'lista' ? 'hidden' : ''}>
-            <VistaLista tavoli={tavoli} gruppi={gruppi} publicId={publicId}
-              onModifica={apriModifica} onElimina={eliminaTavolo}
-              selectMode={selectMode} selectedIds={selectedIds} onToggleSelect={toggleSelect}
-              onSciogliGruppo={sciogliGruppo} tavoloAppMap={tavoloAppMap} tavoloCarryMap={tavoloCarryMap} tavoloAppsMap={tavoloAppsMap} />
-          </div>
+          {gestione && (
+            <div className={vista !== 'lista' ? 'hidden' : ''}>
+              <VistaLista tavoli={tavoli} gruppi={gruppi} publicId={publicId}
+                onModifica={apriModifica} onElimina={eliminaTavolo}
+                selectMode={selectMode} selectedIds={selectedIds} onToggleSelect={toggleSelect}
+                onSciogliGruppo={sciogliGruppo} tavoloAppMap={tavoloAppMap} tavoloCarryMap={tavoloCarryMap} tavoloAppsMap={tavoloAppsMap} />
+            </div>
+          )}
         </>
       )}
 
       {/* Modal CONTO da mappa */}
       {contoModal && (() => {
-        const ordineAperto = ordiniAperti.find(o =>
-          contoModal.gruppoId ? o.gruppoId === contoModal.gruppoId : o.tavoloId === contoModal.tavoloId
+        const ordiniConto = ordiniAperti.filter(o =>
+          contoModal.gruppoId ? o.gruppoId === contoModal.gruppoId : (o.tavoloId === contoModal.tavoloId && !o.gruppoId)
         )
         const fmt = (n: number) => `€${n.toFixed(2)}`
+        const totale = ordiniConto.reduce((s, o) => s + o.totale, 0)
+        const primo = ordiniConto[0]
         return (
           <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4" onClick={() => { setContoModal(null); setContoModificaOrdine(null) }}>
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
-              <div className="px-5 py-4 border-b border-ink-navy/8 flex items-center justify-between">
-                <h3 className="text-base font-bold text-ink-navy">Conto — {contoModal.label}</h3>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md flex flex-col max-h-[88vh]" onClick={e => e.stopPropagation()}>
+              <div className="px-5 py-4 border-b border-ink-navy/8 flex items-center justify-between shrink-0">
+                <div>
+                  <h3 className="text-base font-bold text-ink-navy">Conto — {contoModal.label}</h3>
+                  {ordiniConto.length > 1 && <p className="text-xs text-ink-navy/40 mt-0.5">{ordiniConto.length} sottogruppi</p>}
+                </div>
                 <button onClick={() => { setContoModal(null); setContoModificaOrdine(null) }} className="text-ink-navy/30 hover:text-ink-navy/60 text-xl font-bold leading-none">✕</button>
               </div>
-              {!ordineAperto ? (
+              {ordiniConto.length === 0 ? (
                 <div className="px-5 py-8 text-center text-sm text-ink-navy/30">Nessun conto aperto per questo tavolo</div>
               ) : (
                 <>
-                  <div className="divide-y divide-ink-navy/6 max-h-72 overflow-y-auto">
-                    {ordineAperto.righe.map(r => (
-                      <div key={r.id} className="flex items-center justify-between px-5 py-2.5 gap-3">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-xs font-bold text-ink-navy/40 w-5 shrink-0 text-center">{r.quantita}×</span>
-                          <span className="text-sm text-ink-navy truncate">{r.nome}</span>
-                          {r.note && <span className="text-xs text-ink-navy/35 truncate">({r.note})</span>}
+                  <div className="overflow-y-auto flex-1 divide-y divide-ink-navy/8">
+                    {ordiniConto.map((o, i) => (
+                      <div key={o.id} className="px-5 py-3">
+                        <div className="flex items-center justify-between mb-1.5">
+                          {ordiniConto.length > 1
+                            ? <span className="text-[11px] font-bold text-electric-blue bg-electric-blue/10 px-2 py-0.5 rounded-full">Sottogruppo {i + 1}</span>
+                            : <span />}
+                          <button onClick={() => setContoModificaOrdine(o)}
+                            className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-ink-navy/15 text-ink-navy/60 hover:bg-mist transition-colors">Modifica</button>
                         </div>
-                        <span className="text-sm text-ink-navy/60 shrink-0">{fmt(r.prezzo * r.quantita)}</span>
+                        <div className="divide-y divide-ink-navy/6">
+                          {o.righe.map(r => (
+                            <div key={r.id} className="flex items-center justify-between py-1.5 gap-3">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-xs font-bold text-ink-navy/40 w-5 shrink-0 text-center">{r.quantita}×</span>
+                                <span className="text-sm text-ink-navy truncate">{r.nome}</span>
+                                {r.note && <span className="text-xs text-ink-navy/35 truncate">({r.note})</span>}
+                              </div>
+                              <span className="text-sm text-ink-navy/60 shrink-0">{fmt(r.prezzo * r.quantita)}</span>
+                            </div>
+                          ))}
+                          {o.righe.length === 0 && <p className="py-1.5 text-sm text-ink-navy/30">Nessuna voce</p>}
+                        </div>
                       </div>
                     ))}
-                    {ordineAperto.righe.length === 0 && <p className="px-5 py-4 text-sm text-ink-navy/30 text-center">Nessuna voce</p>}
                   </div>
-                  <div className="px-5 py-4 border-t border-ink-navy/8">
+                  <div className="px-5 py-4 border-t border-ink-navy/8 shrink-0">
                     <div className="flex items-center justify-between mb-3">
-                      <span className="text-base font-bold text-ink-navy">{fmt(ordineAperto.totale)}</span>
-                      <button onClick={() => setContoModificaOrdine(ordineAperto)}
-                        className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-ink-navy/15 text-ink-navy/60 hover:bg-mist transition-colors">
-                        Modifica
-                      </button>
+                      <span className="text-xs text-ink-navy/40">Totale conto</span>
+                      <span className="text-base font-bold text-ink-navy">{fmt(totale)}</span>
                     </div>
-                    <button onClick={() => { chiudiConto(ordineAperto); setContoModal(null) }}
-                      disabled={chiudendo === ordineAperto.id}
+                    <button onClick={() => { if (primo) chiudiConto(primo); setContoModal(null) }}
+                      disabled={!!primo && chiudendo === primo.id}
                       className="w-full py-2.5 rounded-xl bg-ink-navy text-white text-sm font-semibold hover:bg-ink-navy/80 disabled:opacity-40 transition-colors">
-                      {chiudendo === ordineAperto.id ? '…' : 'Chiudi tavolo'}
+                      {primo && chiudendo === primo.id ? '…' : 'Chiudi tavolo'}
                     </button>
+                    <a href="/food/dashboard/conti"
+                      className="block text-center mt-2 text-xs font-semibold text-electric-blue hover:underline">
+                      Vai al conto in Conti →
+                    </a>
                   </div>
                 </>
               )}
