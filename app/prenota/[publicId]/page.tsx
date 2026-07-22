@@ -231,7 +231,11 @@ export default function PrenotaPage() {
   function minOraPerData(dataStr: string): string {
     if (dataStr !== oggi) return ''
     const now = new Date()
-    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    // Arrotonda al quarto d'ora successivo: così il min resta allineato agli slot
+    // (00/15/30/45) usati da step={900} e non si può comunque prenotare nel passato.
+    let mins = Math.ceil((now.getHours() * 60 + now.getMinutes()) / 15) * 15
+    if (mins >= 1440) mins = 1425 // ultimo slot del giorno (23:45)
+    return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`
   }
 
   function validaDataOra(dataStr: string, oraStr: string, preavvisoMinuti?: number, anticipoMaxGiorni?: number): string | null {
@@ -574,7 +578,7 @@ export default function PrenotaPage() {
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Ora *</label>
                     <input type="time" required value={formTavolo.ora}
-                      min={minOraPerData(formTavolo.data)}
+                      min={minOraPerData(formTavolo.data)} step={900}
                       onChange={e => { setSlotDisponibile(null); setFormTavolo(f => ({ ...f, ora: e.target.value })) }}
                       className={`${inp} ${slotDisponibile === false ? 'border-red-300 focus:ring-red-300' : ''}`} />
                     {slotDisponibile === false && (
@@ -842,7 +846,7 @@ export default function PrenotaPage() {
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Orario *</label>
                   <input type="time" value={dati.ora}
-                    min={minOraPerData(dati.data)}
+                    min={minOraPerData(dati.data)} step={900}
                     onChange={e => setDati(d => ({ ...d, ora: e.target.value }))} className={inp} />
                 </div>
               </div>

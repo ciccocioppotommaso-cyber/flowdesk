@@ -736,7 +736,7 @@ export default function Calendario() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-ink-navy/70 mb-1">Ora *</label>
-                    <input type="time" value={formApp.ora}
+                    <input type="time" value={formApp.ora} step={900}
                       onChange={e => setFormApp(f => ({ ...f, ora: e.target.value }))} className={inp} />
                   </div>
                 </div>
