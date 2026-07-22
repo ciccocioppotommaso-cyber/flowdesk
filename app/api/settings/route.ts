@@ -54,19 +54,13 @@ export async function PATCH(req: Request) {
       update.publicId = null
     }
 
-    // publicId impostato manualmente: garantisce l'unicità tra gli utenti Flowest
-    // (se già preso da un altro locale, aggiunge un suffisso -1, -2, … invece di andare in errore)
-    if (typeof update.publicId === 'string' && update.publicId) {
-      const base = update.publicId
-      let slug = base
-      let n = 1
-      while (await prisma.user.findFirst({ where: { publicId: slug, NOT: { id: user.id } } })) {
-        slug = `${base}-${n++}`
-      }
-      update.publicId = slug
-    }
-    // Auto-genera publicId dal nomeLocale se non esiste ancora e non è stato impostato a mano
-    else if (!user.publicId && !update.publicId && update.nomeLocale) {
+    // NB: un publicId manuale già preso da un altro locale è già stato bloccato sopra
+    // con un 409 ("ID già in uso") → niente competizione sullo stesso nome utente.
+    //
+    // Auto-genera il publicId dal nomeLocale SOLO la prima volta (se non esiste ancora).
+    // Una volta impostato non viene mai rigenerato, nemmeno se cambi il nome del locale:
+    // così il link dell'area dipendenti (/dipendente/login/<id>) resta stabile.
+    if (!user.publicId && !update.publicId && update.nomeLocale) {
       const base = (update.nomeLocale as string)
         .toLowerCase()
         .normalize('NFD').replace(/[̀-ͯ]/g, '')

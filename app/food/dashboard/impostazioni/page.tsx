@@ -84,7 +84,7 @@ function jp<T>(raw: string | null | undefined, fallback: T): T {
 const cls = 'w-full border border-ink-navy/15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-electric-blue'
 
 // Stato per-sezione
-type SezioneStatus = { saving: boolean; saved: boolean; dirty: boolean }
+type SezioneStatus = { saving: boolean; saved: boolean; dirty: boolean; error?: string }
 const initStatus = (): SezioneStatus => ({ saving: false, saved: false, dirty: false })
 
 // ── Strumenti menù asporto ────────────────────────────────────────────────────
@@ -384,7 +384,7 @@ export default function Impostazioni() {
 
   // Marca la sezione come dirty quando l'utente modifica qualcosa
   const dirty = useCallback((id: string) => {
-    setStatus(prev => ({ ...prev, [id]: { ...prev[id], dirty: true, saved: false } }))
+    setStatus(prev => ({ ...prev, [id]: { ...prev[id], dirty: true, saved: false, error: undefined } }))
   }, [])
 
   useEffect(() => {
@@ -441,12 +441,12 @@ export default function Impostazioni() {
       })
       const json = await res.json()
       if (!res.ok) { console.error('[saveSezione]', res.status, json); throw new Error(json.error || `Errore ${res.status}`) }
-      // Il server può aver reso univoco il publicId (suffisso anti-conflitto): rifletti il valore salvato
+      // Il server conferma il publicId salvato: rifletti il valore
       if (typeof json.publicId === 'string' && json.publicId !== publicId) setPublicId(json.publicId)
-      setStatus(prev => ({ ...prev, [id]: { saving: false, saved: true, dirty: false } }))
+      setStatus(prev => ({ ...prev, [id]: { saving: false, saved: true, dirty: false, error: undefined } }))
     } catch (e) {
       console.error('[saveSezione] catch:', e)
-      setStatus(prev => ({ ...prev, [id]: { saving: false, saved: false, dirty: true } }))
+      setStatus(prev => ({ ...prev, [id]: { saving: false, saved: false, dirty: true, error: e instanceof Error ? e.message : 'Errore nel salvataggio' } }))
     }
   }
 
@@ -779,7 +779,7 @@ export default function Impostazioni() {
             <Section title="ID pubblico del locale" subtitle="Identificativo unico del tuo locale, usato per l'area dipendenti e per i link pubblici (menu e prenotazioni)."
               onSave={() => saveSezione('bot', { publicId: publicId.trim().toLowerCase().replace(/[^a-z0-9-]/g, '') || null })}
               status={st('bot')}>
-              <Field label="ID pubblico" hint="Solo lettere minuscole, numeri e trattini. Deve essere unico tra tutti i locali Flowest: se quello scelto è già in uso, al salvataggio viene aggiunto automaticamente un suffisso (es. -1) per evitare conflitti.">
+              <Field label="ID pubblico" hint="Solo lettere minuscole, numeri e trattini. Deve essere unico tra tutti i locali Flowest: se è già in uso da un altro locale, il salvataggio viene bloccato e dovrai sceglierne un altro. Cambiandolo cambia anche il link dell'area dipendenti, quindi modificalo solo se necessario.">
                 <input type="text" value={publicId} onChange={e => { setPublicId(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')); dirty('bot') }}
                   placeholder="ristorante-mario" className={cls} />
               </Field>
@@ -865,7 +865,7 @@ export default function Impostazioni() {
 
 function Section({ title, subtitle, children, onSave, status }: {
   title: string; subtitle?: string; children: React.ReactNode
-  onSave: () => void; status: { saving: boolean; saved: boolean; dirty: boolean }
+  onSave: () => void; status: { saving: boolean; saved: boolean; dirty: boolean; error?: string }
 }) {
   return (
     <div className="bg-white border border-ink-navy/10 rounded-xl p-5 space-y-4">
@@ -884,6 +884,9 @@ function Section({ title, subtitle, children, onSave, status }: {
         </button>
       </div>
       {children}
+      {status.error && (
+        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{status.error}</p>
+      )}
     </div>
   )
 }
