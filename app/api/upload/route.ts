@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/getAuthUser'
-import { getSupabaseStorage, storageConfigurato, BUCKET } from '@/lib/supabaseStorage'
+import { uploadSuStorage, storageConfigurato } from '@/lib/supabaseStorage'
 
-// POST — riceve un'immagine (data URL base64, già compressa lato client) e la
-// carica su Supabase Storage, restituendo l'URL pubblico. Se lo storage non è
-// configurato, risponde 503 e il client ripiega sul salvataggio inline (base64).
+// POST — riceve un'immagine (data URL base64, già compressa lato client), la carica su
+// Supabase Storage e restituisce l'URL pubblico. Se lo storage non è configurato, risponde
+// 503 e il client ripiega sul salvataggio inline (base64).
 export async function POST(req: Request) {
   const user = await getAuthUser()
   if (!user) return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
@@ -25,16 +25,10 @@ export async function POST(req: Request) {
   const path = `${user.id}/${crypto.randomUUID()}.${ext}`
 
   try {
-    const supabase = getSupabaseStorage()
-    const { error } = await supabase.storage.from(BUCKET).upload(path, buffer, { contentType, upsert: false })
-    if (error) {
-      console.error('[upload]', error.message)
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path)
-    return NextResponse.json({ url: data.publicUrl })
+    const publicUrl = await uploadSuStorage(path, buffer, contentType)
+    return NextResponse.json({ url: publicUrl })
   } catch (e) {
-    console.error('[upload] exception', e)
-    return NextResponse.json({ error: 'Upload fallito' }, { status: 500 })
+    console.error('[upload]', e)
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Upload fallito' }, { status: 500 })
   }
 }
