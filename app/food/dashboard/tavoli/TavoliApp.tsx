@@ -1,7 +1,7 @@
 'use client'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import QRCode from 'qrcode'
-import { IconTable, IconCheck, IconTrash, IconPencil, IconUnlink } from '@/app/components/icons'
+import { IconTable, IconCheck, IconTrash, IconPencil } from '@/app/components/icons'
 import { ModificaOrdineModal } from '../components/ModificaOrdineModal'
 
 // ── Tipi ─────────────────────────────────────────────────────────────────────
@@ -14,7 +14,8 @@ interface MapData { forma: 'quadrato' | 'cerchio'; colore: string; w: number; h:
 interface Elemento { id: string; tipo: string; label: string; x: number; y: number; w: number; h: number; colore: string }
 
 // ── Costanti ──────────────────────────────────────────────────────────────────
-const COLORI_PRESET = ['#6366f1','#f59e0b','#10b981','#ef4444','#3b82f6','#8b5cf6','#ec4899','#64748b']
+// Rosso escluso di proposito: è riservato al segnale "ordine pronto" sui tavoli
+const COLORI_PRESET = ['#6366f1','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ec4899','#64748b']
 const DEFAULT_VISUAL: Omit<MapData,'x'|'y'> = { forma: 'quadrato', colore: '#6366f1', w: 110, h: 110 }
 const CANVAS_W = 1400
 const CANVAS_H = 800
@@ -300,7 +301,8 @@ const VistaMappa = forwardRef<VistaMappHandle, {
   tavoliOccupati?: Set<string>   // tavoli con conto aperto → bordo attivo
   tavoliPronti?: Set<string>     // tavoli con un ordine pronto non ancora visto → triangolino
   canEdit?: boolean              // true solo in gestione → mostra il toggle "Modifica" mappa
-}>(function VistaMappa({ tavoli, gruppi, salaAttiva, elementi, onSaveElementi, onModifica, onElimina, selectMode, selectedIds, onToggleSelect, onSciogliGruppo, tavoloAppMap, tavoloCarryMap, tavoloAppsMap, onTavoloClick, tavoliOccupati, tavoliPronti, canEdit }, ref) {
+  separaMode?: boolean           // modalità "separa tavoli": click su un tavolo unito → scioglie il gruppo
+}>(function VistaMappa({ tavoli, gruppi, salaAttiva, elementi, onSaveElementi, onModifica, onElimina, selectMode, selectedIds, onToggleSelect, onSciogliGruppo, tavoloAppMap, tavoloCarryMap, tavoloAppsMap, onTavoloClick, tavoliOccupati, tavoliPronti, canEdit, separaMode }, ref) {
   const [editMode, setEditMode] = useState(false)
   const [hoveredTavoloId, setHoveredTavoloId] = useState<string | null>(null)
   const [zoom, setZoom] = useState(() => {
@@ -485,44 +487,46 @@ const VistaMappa = forwardRef<VistaMappHandle, {
 
   return (
     <div className="space-y-3">
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-1 bg-white border border-ink-navy/10 rounded-xl px-2 py-1 shadow-sm">
-          <button onClick={() => setZoomSync(Math.max(0.2, +(zoomRef.current - 0.1).toFixed(1)))} className="w-7 h-7 flex items-center justify-center text-ink-navy/60 hover:bg-mist rounded-lg font-bold text-lg">−</button>
-          <span className="text-xs font-semibold text-ink-navy/60 w-10 text-center">{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoomSync(Math.min(3, +(zoomRef.current + 0.1).toFixed(1)))} className="w-7 h-7 flex items-center justify-center text-ink-navy/60 hover:bg-mist rounded-lg font-bold text-lg">+</button>
-          <button onClick={handleReset} className="ml-1 text-xs text-electric-blue hover:text-ink-navy font-medium px-1">Reset</button>
-        </div>
-        {canEdit && (
+      {/* Toolbar edit — solo in gestione, così la mappa live non perde spazio */}
+      {canEdit && (
+        <div className="flex items-center gap-3 flex-wrap">
           <button onClick={toggleEditMode}
             className={`flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl border transition-colors ${editMode ? 'bg-electric-blue text-white border-electric-blue' : 'bg-white text-ink-navy/60 border-ink-navy/15 hover:bg-mist'}`}>
             {editMode ? 'Modifica attiva' : 'Modifica'}
           </button>
-        )}
-        {canEdit && editMode && (
-          <>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs text-ink-navy/35">Aggiungi:</span>
-              {TIPI_ELEMENTO.map(t => (
-                <button key={t.tipo} onClick={() => aggiungiElemento(t)}
-                  className="text-xs px-2.5 py-1 rounded-lg border border-ink-navy/10 bg-white hover:bg-mist text-ink-navy/70 font-medium shadow-sm">{t.label}</button>
-              ))}
-            </div>
-            <button onClick={ripulisciMappa}
-              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border border-red-200 text-red-500 bg-white hover:bg-red-50 transition-colors">
-              🗑 Ripulisci mappa
-            </button>
-          </>
-        )}
-        <p className="text-xs text-ink-navy/35 ml-auto hidden lg:block">
-          {selectMode ? 'Clicca i tavoli per selezionarli' : editMode ? 'Trascina tavoli per spostarli' : canEdit ? 'Solo visualizzazione — clicca Modifica per editare' : 'Mappa live'}
-        </p>
-      </div>
+          {editMode && (
+            <>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs text-ink-navy/35">Aggiungi:</span>
+                {TIPI_ELEMENTO.map(t => (
+                  <button key={t.tipo} onClick={() => aggiungiElemento(t)}
+                    className="text-xs px-2.5 py-1 rounded-lg border border-ink-navy/10 bg-white hover:bg-mist text-ink-navy/70 font-medium shadow-sm">{t.label}</button>
+                ))}
+              </div>
+              <button onClick={ripulisciMappa}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border border-red-200 text-red-500 bg-white hover:bg-red-50 transition-colors">
+                🗑 Ripulisci mappa
+              </button>
+            </>
+          )}
+          <p className="text-xs text-ink-navy/35 ml-auto hidden lg:block">
+            {selectMode ? 'Clicca i tavoli per selezionarli' : editMode ? 'Trascina tavoli per spostarli' : 'Solo visualizzazione — clicca Modifica per editare'}
+          </p>
+        </div>
+      )}
 
       {/* Canvas */}
       <div className="rounded-2xl border border-ink-navy/10 shadow-sm overflow-hidden"
         style={{ width: '100%', height: 680, backgroundColor: '#ffffff', cursor: selectMode ? 'default' : 'grab', position: 'relative', backgroundImage: 'radial-gradient(circle,#e5e7eb 1.5px,transparent 1.5px)', backgroundSize: '30px 30px' }}
         onMouseDown={selectMode ? undefined : startPan}>
+        {/* Zoom sovrapposto all'angolo della mappa: compatto, non ruba spazio */}
+        <div onMouseDown={e => e.stopPropagation()}
+          className="absolute top-2 left-2 z-40 flex items-center gap-1 bg-white/95 border border-ink-navy/10 rounded-xl px-2 py-1 shadow-sm">
+          <button onClick={() => setZoomSync(Math.max(0.2, +(zoomRef.current - 0.1).toFixed(1)))} className="w-7 h-7 flex items-center justify-center text-ink-navy/60 hover:bg-mist rounded-lg font-bold text-lg">−</button>
+          <span className="text-xs font-semibold text-ink-navy/60 w-10 text-center">{Math.round(zoom * 100)}%</span>
+          <button onClick={() => setZoomSync(Math.min(3, +(zoomRef.current + 0.1).toFixed(1)))} className="w-7 h-7 flex items-center justify-center text-ink-navy/60 hover:bg-mist rounded-lg font-bold text-lg">+</button>
+          <button onClick={handleReset} className="ml-1 text-xs text-electric-blue hover:text-ink-navy font-medium px-1">Reset</button>
+        </div>
         <div style={{ position: 'absolute', top: 0, left: 0, transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`, transformOrigin: '0 0', width: CANVAS_W, height: CANVAS_H, backgroundColor: '#ffffff', backgroundImage: 'radial-gradient(circle,#e5e7eb 1.5px,transparent 1.5px)', backgroundSize: '30px 30px' }}>
 
           {/* Elementi decorativi */}
@@ -581,30 +585,27 @@ const VistaMappa = forwardRef<VistaMappHandle, {
                   )}
                   {isSelected && <div style={{ position: 'absolute', inset: -5, borderRadius: isC ? '50%' : 14, border: '3px solid #6366f1', pointerEvents: 'none', zIndex: 5 }} />}
                   {!isSelected && tavoliOccupati?.has(t.id) && (
-                    <div style={{ position: 'absolute', inset: -4, borderRadius: isC ? '50%' : 13, border: '2.5px solid #ef4444', pointerEvents: 'none', zIndex: 4, opacity: 0.9 }} />
+                    <div style={{ position: 'absolute', inset: -4, borderRadius: isC ? '50%' : 13, border: '2.5px solid #22c55e', pointerEvents: 'none', zIndex: 4, opacity: 0.95 }} />
                   )}
                   {gruppo && !isSelected && (
                     <div style={{ position: 'absolute', inset: -4, borderRadius: isC ? '50%' : 13, border: '2.5px dashed #f97316', pointerEvents: 'none', zIndex: 4 }} />
                   )}
-                  {/* Triangolino "ordine pronto" (sparisce una volta aperto il tavolo) */}
+                  {/* Segnale "ordine pronto" dentro il riquadro (sparisce una volta aperto il tavolo) */}
                   {tavoliPronti?.has(t.id) && (
-                    <div title="Ordine pronto" style={{ position: 'absolute', top: -13, left: '50%', transform: 'translateX(-50%)', zIndex: 31, width: 0, height: 0, borderLeft: '9px solid transparent', borderRight: '9px solid transparent', borderBottom: '15px solid #ef4444', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.35))' }} />
+                    <div title="Ordine pronto" style={{ position: 'absolute', top: 6, right: 6, zIndex: 6, width: 22, height: 22, borderRadius: '50%', backgroundColor: '#dc2626', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, lineHeight: 1, boxShadow: '0 1px 4px rgba(0,0,0,0.45)', border: '1.5px solid #fff', pointerEvents: 'none' }}>!</div>
                   )}
                   <div data-drag={editMode && !selectMode ? "1" : undefined}
-                    onMouseDown={editMode && !selectMode ? e => startDragT(e, t.id) : selectMode ? e => { e.stopPropagation(); onToggleSelect(t.id) } : undefined}
-                    onClick={!editMode && !selectMode ? () => onTavoloClick?.(t.id, gruppo?.id ?? null, label) : undefined}
-                    style={{ width: w, height: h, backgroundColor: colore, borderRadius: isC ? '50%' : 10, cursor: selectMode ? 'pointer' : editMode ? 'grab' : 'pointer', position: 'absolute', top: 0, left: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: isSelected ? `0 0 0 3px #6366f1, 0 3px 12px rgba(0,0,0,0.15)` : '0 3px 12px rgba(0,0,0,0.15)', opacity: selectMode && !isSelected ? 0.75 : 1 }}>
+                    onMouseDown={editMode && !selectMode ? e => startDragT(e, t.id) : selectMode ? e => { e.stopPropagation(); onToggleSelect(t.id) } : separaMode ? e => e.stopPropagation() : undefined}
+                    onClick={separaMode ? () => { if (gruppo) onSciogliGruppo(gruppo.id) } : !editMode && !selectMode ? () => onTavoloClick?.(t.id, gruppo?.id ?? null, label) : undefined}
+                    style={{ width: w, height: h, backgroundColor: colore, borderRadius: isC ? '50%' : 10, cursor: selectMode ? 'pointer' : editMode ? 'grab' : separaMode ? (gruppo ? 'pointer' : 'default') : 'pointer', position: 'absolute', top: 0, left: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: isSelected ? `0 0 0 3px #6366f1, 0 3px 12px rgba(0,0,0,0.15)` : '0 3px 12px rgba(0,0,0,0.15)', opacity: selectMode && !isSelected ? 0.75 : separaMode && !gruppo ? 0.45 : 1 }}>
                     <span style={{ color: '#fff', fontWeight: 700, fontSize: Math.min(w, h) < 80 ? 10 : 13, textAlign: 'center', padding: '0 6px', lineHeight: 1.3, pointerEvents: 'none' }}>{label}</span>
                     <span style={{ color: '#fff', fontSize: Math.min(w, h) < 80 ? 10 : 12, fontWeight: 600, marginTop: 3, pointerEvents: 'none', backgroundColor: 'rgba(0,0,0,0.18)', borderRadius: 20, padding: '1px 7px' }}>{t.posti}</span>
                   </div>
-                  {!selectMode && hoveredTavoloId === t.id && (
+                  {/* Azioni al passaggio del mouse: solo in modifica (scollegamento ora via "Separa tavoli") */}
+                  {editMode && !selectMode && hoveredTavoloId === t.id && (
                     <div style={{ position: 'absolute', top: -30, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 4, zIndex: 30, paddingBottom: 4 }}>
-                      {gruppo && (
-                        <button data-drag="1" onMouseDown={e => e.stopPropagation()} onClick={() => onSciogliGruppo(gruppo.id)}
-                          className="w-6 h-6 p-1.5 bg-white border border-orange-300 rounded-full text-orange-500 flex items-center justify-center hover:bg-orange-50 shadow" title="Sciogli gruppo"><IconUnlink /></button>
-                      )}
-                      {editMode && <button data-drag="1" onMouseDown={e => e.stopPropagation()} onClick={() => onModifica(t)} className="w-6 h-6 p-1.5 bg-white border border-ink-navy/15 rounded-full text-ink-navy/50 flex items-center justify-center hover:bg-electric-blue/10 shadow"><IconPencil /></button>}
-                      {editMode && <button data-drag="1" onMouseDown={e => e.stopPropagation()} onClick={() => onElimina(t.id)} className="w-6 h-6 p-1.5 bg-white border border-red-200 rounded-full flex items-center justify-center hover:bg-red-50 shadow text-red-500"><IconTrash /></button>}
+                      <button data-drag="1" onMouseDown={e => e.stopPropagation()} onClick={() => onModifica(t)} className="w-6 h-6 p-1.5 bg-white border border-ink-navy/15 rounded-full text-ink-navy/50 flex items-center justify-center hover:bg-electric-blue/10 shadow"><IconPencil /></button>
+                      <button data-drag="1" onMouseDown={e => e.stopPropagation()} onClick={() => onElimina(t.id)} className="w-6 h-6 p-1.5 bg-white border border-red-200 rounded-full flex items-center justify-center hover:bg-red-50 shadow text-red-500"><IconTrash /></button>
                     </div>
                   )}
                   {editMode && !selectMode && !isC && <div data-drag="1" onMouseDown={e => startResizeT(e, t.id, 'r')} style={hS('ew-resize', { right: -5, top: 8, bottom: 8, width: 10 })} />}
@@ -645,10 +646,14 @@ export function TavoliApp({ mode }: { mode: 'live' | 'gestione' }) {
   const [loading, setLoading] = useState(true)
   const [publicId, setPublicId] = useState<string | null>(null)
 
-  // Selezione / fusione
+  // Selezione / fusione / separazione
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [fondendo, setFondendo] = useState(false)
+  const [separaMode, setSeparaMode] = useState(false)
+
+  function avviaUnisci() { setSeparaMode(false); setSelectedIds([]); setSelectMode(v => !v) }
+  function avviaSepara() { setSelectMode(false); setSelectedIds([]); setSeparaMode(v => !v) }
 
   // Modal conto da mappa
   const [contoModal, setContoModal] = useState<{ tavoloId: string; gruppoId: string | null; label: string } | null>(null)
@@ -875,19 +880,24 @@ export function TavoliApp({ mode }: { mode: 'live' | 'gestione' }) {
     }})
   }
 
-  const selBanner = selectMode && (
+  const selBanner = selectMode ? (
     <div className="flex items-center gap-3 bg-electric-blue/10 border border-electric-blue/25 rounded-xl px-4 py-3">
       <span className="text-sm text-electric-blue font-medium flex-1">
-        {selectedIds.length === 0 ? 'Clicca i tavoli da fondere' : `${selectedIds.length} tavol${selectedIds.length === 1 ? 'o' : 'i'} selezionat${selectedIds.length === 1 ? 'o' : 'i'}`}
+        {selectedIds.length === 0 ? 'Clicca i tavoli da unire' : `${selectedIds.length} tavol${selectedIds.length === 1 ? 'o' : 'i'} selezionat${selectedIds.length === 1 ? 'o' : 'i'}`}
       </span>
       {selectedIds.length >= 2 && (
-        <button onClick={fondiTavoli} disabled={fondendo} className="bg-orange-500 text-white font-semibold px-4 py-1.5 rounded-lg text-sm hover:bg-orange-600 disabled:opacity-50">
-          {fondendo ? '...' : `Fondi ${selectedIds.length} tavoli`}
+        <button onClick={fondiTavoli} disabled={fondendo} className="bg-electric-blue text-white font-semibold px-4 py-1.5 rounded-lg text-sm hover:bg-electric-blue/90 disabled:opacity-50">
+          {fondendo ? '...' : `Unisci ${selectedIds.length} tavoli`}
         </button>
       )}
       <button onClick={() => { setSelectMode(false); setSelectedIds([]) }} className="text-sm text-ink-navy/50 hover:text-ink-navy/70 border border-ink-navy/15 px-3 py-1.5 rounded-lg">Annulla</button>
     </div>
-  )
+  ) : separaMode ? (
+    <div className="flex items-center gap-3 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3">
+      <span className="text-sm text-orange-700 font-medium flex-1">Clicca un tavolo unito per separarlo dal gruppo</span>
+      <button onClick={() => setSeparaMode(false)} className="text-sm text-ink-navy/50 hover:text-ink-navy/70 border border-ink-navy/15 px-3 py-1.5 rounded-lg">Fine</button>
+    </div>
+  ) : null
 
   return (
     <div className="space-y-6">
@@ -897,15 +907,20 @@ export function TavoliApp({ mode }: { mode: 'live' | 'gestione' }) {
           <h1 className="text-2xl font-bold text-ink-navy">{gestione ? 'Gestione tavoli' : 'Tavoli'}</h1>
           <p className="text-ink-navy/50 text-sm mt-0.5">{gestione ? 'Disegna la piantina, gestisci QR e unione tavoli' : 'Situazione live delle sale'}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {/* Unisci / Separa: disponibili sia in visualizzazione che in gestione */}
+          <button onClick={avviaUnisci}
+            className={`font-semibold px-4 py-2 rounded-xl text-sm border transition-colors ${selectMode ? 'bg-electric-blue/15 border-electric-blue/40 text-electric-blue' : 'bg-white border-ink-navy/15 text-ink-navy/70 hover:bg-mist'}`}>
+            {selectMode ? '✕ Esci' : 'Unisci tavoli'}
+          </button>
+          <button onClick={avviaSepara}
+            className={`font-semibold px-4 py-2 rounded-xl text-sm border transition-colors ${separaMode ? 'bg-orange-100 border-orange-300 text-orange-600' : 'bg-white border-ink-navy/15 text-ink-navy/70 hover:bg-mist'}`}>
+            {separaMode ? '✕ Esci' : 'Separa tavoli'}
+          </button>
           {gestione ? (
             <>
               <a href="/food/dashboard/tavoli"
                 className="font-semibold px-4 py-2 rounded-xl text-sm border bg-white border-ink-navy/15 text-ink-navy/70 hover:bg-mist transition-colors">← Mappa live</a>
-              <button onClick={() => { setSelectMode(v => !v); setSelectedIds([]) }}
-                className={`font-semibold px-4 py-2 rounded-xl text-sm border transition-colors ${selectMode ? 'bg-electric-blue/15 border-electric-blue/40 text-electric-blue' : 'bg-white border-ink-navy/15 text-ink-navy/70 hover:bg-mist'}`}>
-                {selectMode ? '✕ Esci selezione' : 'Unisci tavoli'}
-              </button>
               <button onClick={apriNuovoTavolo} className="bg-electric-blue text-white font-semibold px-4 py-2 rounded-xl text-sm hover:bg-electric-blue/90 shadow-sm">
                 + Nuovo tavolo
               </button>
@@ -965,7 +980,7 @@ export function TavoliApp({ mode }: { mode: 'live' | 'gestione' }) {
               onModifica={apriModifica} onElimina={eliminaTavolo}
               selectMode={selectMode} selectedIds={selectedIds} onToggleSelect={toggleSelect}
               onSciogliGruppo={sciogliGruppo} tavoloAppMap={tavoloAppMap} tavoloCarryMap={tavoloCarryMap} tavoloAppsMap={tavoloAppsMap}
-              tavoliOccupati={tavoliOccupati} tavoliPronti={tavoliPronti} canEdit={gestione}
+              tavoliOccupati={tavoliOccupati} tavoliPronti={tavoliPronti} canEdit={gestione} separaMode={separaMode}
               onTavoloClick={(tid, gid, lbl) => {
                 // aprendo il tavolo, segna come visti i suoi ordini pronti → il triangolino sparisce
                 const daVedere = ordiniAperti
