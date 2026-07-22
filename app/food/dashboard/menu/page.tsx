@@ -2,6 +2,32 @@
 import { useEffect, useState } from 'react'
 import { IconFork, IconPencil, IconTrash } from '@/app/components/icons'
 
+// Ridimensiona e comprime un'immagine lato client → data URL JPEG leggero (~30-70KB),
+// così può essere salvata direttamente nel campo immagineUrl senza storage esterno.
+function comprimiImmagine(file: File, maxLato = 700, quality = 0.72): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('lettura file fallita'))
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        let { width, height } = img
+        if (width >= height && width > maxLato) { height = Math.round(height * maxLato / width); width = maxLato }
+        else if (height > width && height > maxLato) { width = Math.round(width * maxLato / height); height = maxLato }
+        const canvas = document.createElement('canvas')
+        canvas.width = width; canvas.height = height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) { reject(new Error('canvas non disponibile')); return }
+        ctx.drawImage(img, 0, 0, width, height)
+        resolve(canvas.toDataURL('image/jpeg', quality))
+      }
+      img.onerror = () => reject(new Error('immagine non valida'))
+      img.src = reader.result as string
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
 interface Piatto {
   id: string
   nome: string
@@ -30,6 +56,23 @@ function MenuEditor({ tipo }: { tipo: 'locale' | 'asporto' }) {
   const [editPiatto, setEditPiatto] = useState<Piatto & { categoriaId: string } | null>(null)
   const [formPiatto, setFormPiatto] = useState({ nome: '', descrizione: '', prezzo: '', immagineUrl: '' })
   const [saving, setSaving] = useState(false)
+  const [caricandoFoto, setCaricandoFoto] = useState(false)
+
+  // Carica una foto dal dispositivo: la ridimensiona/comprime lato client e la salva
+  // come data URL in immagineUrl (nessun servizio esterno richiesto).
+  async function onSelezionaFoto(file: File | null) {
+    if (!file) return
+    if (!file.type.startsWith('image/')) { alert('Seleziona un file immagine (JPG, PNG…).'); return }
+    setCaricandoFoto(true)
+    try {
+      const dataUrl = await comprimiImmagine(file)
+      setFormPiatto(f => ({ ...f, immagineUrl: dataUrl }))
+    } catch {
+      alert('Non è stato possibile elaborare l\'immagine. Riprova con un\'altra foto.')
+    } finally {
+      setCaricandoFoto(false)
+    }
+  }
   const [conferma, setConferma] = useState<{ msg: string; onConfirm: () => void } | null>(null)
   const [copiando, setCopiando] = useState(false)
   const [copiato, setCopiato] = useState(false)
@@ -292,13 +335,28 @@ function MenuEditor({ tipo }: { tipo: 'locale' | 'asporto' }) {
                   className="w-full border border-ink-navy/15 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-electric-blue" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-ink-navy/70 mb-1">URL immagine</label>
-                <input value={formPiatto.immagineUrl} onChange={e => setFormPiatto(f => ({ ...f, immagineUrl: e.target.value }))}
-                  placeholder="https://..."
-                  className="w-full border border-ink-navy/15 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-electric-blue" />
-                {formPiatto.immagineUrl && (
-                  <img src={formPiatto.immagineUrl} alt="preview" className="mt-2 w-full h-32 object-cover rounded-xl" />
+                <label className="block text-sm font-medium text-ink-navy/70 mb-1">Foto del piatto</label>
+                {formPiatto.immagineUrl ? (
+                  <div className="relative">
+                    <img src={formPiatto.immagineUrl} alt="preview" className="w-full h-32 object-cover rounded-xl" />
+                    <button type="button" onClick={() => setFormPiatto(f => ({ ...f, immagineUrl: '' }))}
+                      className="absolute top-2 right-2 bg-white/90 border border-ink-navy/15 rounded-lg text-xs font-semibold px-2 py-1 text-red-500 hover:bg-white shadow-sm">Rimuovi</button>
+                  </div>
+                ) : (
+                  <label className={`flex flex-col items-center justify-center gap-1 border-2 border-dashed border-ink-navy/15 rounded-xl py-6 transition-colors ${caricandoFoto ? 'opacity-60' : 'cursor-pointer hover:bg-mist hover:border-electric-blue/40'}`}>
+                    <span className="text-sm font-semibold text-electric-blue">{caricandoFoto ? 'Caricamento…' : '📷 Carica foto'}</span>
+                    <span className="text-xs text-ink-navy/35">JPG o PNG dal tuo dispositivo</span>
+                    <input type="file" accept="image/*" className="hidden" disabled={caricandoFoto}
+                      onChange={e => { onSelezionaFoto(e.target.files?.[0] ?? null); e.target.value = '' }} />
+                  </label>
                 )}
+                <details className="mt-2">
+                  <summary className="text-xs text-ink-navy/40 cursor-pointer select-none">oppure incolla un URL</summary>
+                  <input value={formPiatto.immagineUrl.startsWith('data:') ? '' : formPiatto.immagineUrl}
+                    onChange={e => setFormPiatto(f => ({ ...f, immagineUrl: e.target.value }))}
+                    placeholder="https://..."
+                    className="mt-1.5 w-full border border-ink-navy/15 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-electric-blue" />
+                </details>
               </div>
             </div>
             <div className="flex gap-3 pt-1">
