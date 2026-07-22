@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { IconFork, IconPencil, IconTrash } from '@/app/components/icons'
-import { comprimiImmagine } from '@/lib/comprimiImmagine'
+import { preparaFoto } from '@/lib/uploadFoto'
 
 interface Piatto {
   id: string
@@ -40,8 +40,8 @@ function MenuEditor({ tipo }: { tipo: 'locale' | 'asporto' }) {
     if (!file.type.startsWith('image/')) { alert('Seleziona un file immagine (JPG, PNG…).'); return }
     setCaricandoFoto(true)
     try {
-      const dataUrl = await comprimiImmagine(file)
-      setFormPiatto(f => ({ ...f, immagineUrl: dataUrl }))
+      const url = await preparaFoto(file)
+      setFormPiatto(f => ({ ...f, immagineUrl: url }))
     } catch {
       alert('Non è stato possibile elaborare l\'immagine. Riprova con un\'altra foto.')
     } finally {

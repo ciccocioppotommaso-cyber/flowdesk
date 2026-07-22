@@ -7,7 +7,7 @@ import {
   IconFork, IconCard, IconInfo, IconHelp, IconUser, IconCheck,
   IconChat, IconCamera, IconPin,
 } from '@/app/components/icons'
-import { comprimiImmagine } from '@/lib/comprimiImmagine'
+import { preparaFoto } from '@/lib/uploadFoto'
 
 const SETTORI = [
   'Ristorazione', 'Biomedica', 'Consulenza', 'E-commerce',
@@ -390,8 +390,8 @@ export default function Impostazioni() {
     if (!file.type.startsWith('image/')) { alert('Seleziona un file immagine (JPG, PNG…).'); return }
     setCaricandoLogo(true)
     try {
-      const dataUrl = await comprimiImmagine(file, 400, 0.8) // logo piccolo: lato max 400px
-      setGrafica(g => ({ ...g, menuLogoUrl: dataUrl }))
+      const url = await preparaFoto(file, 400, 0.8) // logo piccolo: lato max 400px
+      setGrafica(g => ({ ...g, menuLogoUrl: url }))
       setGraficaStatus(s => ({ ...s, dirty: true, saved: false }))
     } catch {
       alert('Non è stato possibile elaborare l\'immagine. Riprova con un\'altra foto.')
