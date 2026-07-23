@@ -218,7 +218,7 @@ function VistaLista({ tavoli, gruppi, publicId, onModifica, onElimina, selectMod
       <div className="divide-y divide-gray-100">
         {tavoli.map(t => {
           const label = t.etichetta ?? `Tavolo ${t.numero}`
-          const url = publicId ? `${base}/ordina/${publicId}/${t.numero}` : ''
+          const url = publicId ? `${base}/food/ordina/${publicId}/${t.numero}` : ''
           const gruppo = gruppoByTavoloId.get(t.id)
           const isSelected = selectedIds.includes(t.id)
           const appsDelTavolo = tavoloAppsMap?.get(t.id) ?? []
@@ -379,8 +379,9 @@ const VistaMappa = forwardRef<VistaMappHandle, {
       maxX = Math.max(maxX, d.x + d.w); maxY = Math.max(maxY, d.y + d.h)
     })
     const PAD = 70 // margine attorno ai tavoli
-    const VW = viewportRef.current?.clientWidth ?? 680
-    const VH = viewportRef.current?.clientHeight ?? 680
+    const rect = viewportRef.current?.getBoundingClientRect()
+    const VW = rect?.width || 680
+    const VH = rect?.height || 680
     const bw = (maxX - minX) + PAD * 2
     const bh = (maxY - minY) + PAD * 2
     let z = Math.min(VW / bw, VH / bh, 1.5)
@@ -990,13 +991,22 @@ export function TavoliApp({ mode }: { mode: 'live' | 'gestione' }) {
         {(!gestione || vista === 'mappa') && sale.length > 0 && (
           <>
             {gestione && <div className="w-px h-5 bg-ink-navy/15 mx-1" />}
-            {sale.map(s => (
-              <button key={s.id} onClick={() => setSalaAttivaId(s.id)}
-                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${salaAttivaId === s.id ? 'bg-ink-navy text-white' : 'bg-white border border-ink-navy/15 text-ink-navy/60 hover:bg-mist'}`}>
-                {s.nome}
-                {(s._count?.tavoli ?? 0) > 0 && <span className="ml-1.5 text-xs opacity-60">{s._count?.tavoli}</span>}
-              </button>
-            ))}
+            {sale.map(s => {
+              // Ordine pronto in questa sala? (i tavoli senza sala ricadono nella prima)
+              const isPrima = sale[0]?.id === s.id
+              const salaHaPronti = tavoli.some(t => tavoliPronti.has(t.id) && (t.salaId === s.id || (isPrima && !t.salaId)))
+              return (
+                <button key={s.id} onClick={() => setSalaAttivaId(s.id)}
+                  className={`relative px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${salaAttivaId === s.id ? 'bg-ink-navy text-white' : 'bg-white border border-ink-navy/15 text-ink-navy/60 hover:bg-mist'}`}>
+                  {s.nome}
+                  {(s._count?.tavoli ?? 0) > 0 && <span className="ml-1.5 text-xs opacity-60">{s._count?.tavoli}</span>}
+                  {salaHaPronti && (
+                    <span title="Ordine pronto in questa sala"
+                      className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-500 border-2 border-white shadow animate-pulse" />
+                  )}
+                </button>
+              )
+            })}
             {gestione && (
               <button onClick={() => setShowSale(true)}
                 className="px-3 py-1.5 rounded-full text-sm font-medium bg-white border border-dashed border-ink-navy/20 text-ink-navy/40 hover:bg-mist hover:border-ink-navy/30 transition-colors">

@@ -22,7 +22,7 @@ export async function POST(req: Request) {
 
   const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
   const slug = user.publicId
-  const loginUrl = slug ? `${BASE_URL}/dipendente/login/${slug}` : `${BASE_URL}/dipendente/login`
+  const loginUrl = slug ? `${BASE_URL}/food/dipendente/login/${slug}` : `${BASE_URL}/food/dipendente/login`
 
   await sendEmailAccessoDipendente(email, dipendente.nome, dipendente.username, loginUrl)
 

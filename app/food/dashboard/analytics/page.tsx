@@ -349,7 +349,7 @@ export default function AnalyticsPage() {
   const [periodoAdv, setPeriodoAdv] = useState<PeriodoAdv>('settimana')
   const [riferimentoAdv, setRiferimentoAdv] = useState<Date>(new Date())
   const [calendarioAdvAperto, setCalendarioAdvAperto] = useState(false)
-  const [kpiAperta, setKpiAperta] = useState<string | null>(null) // tile KPI espansa (dettaglio giornaliero)
+  const [kpiEspanse, setKpiEspanse] = useState(false) // dettaglio giornaliero: cliccando una tile si espandono tutte
 
   interface BucketAdv { data: string; incasso: number; ordini: number; coperti: number; asporto: number; delivery: number; incassoAsporto?: number; incassoDelivery?: number }
   interface DatiTavoliAdv {
@@ -656,10 +656,10 @@ export default function AnalyticsPage() {
   // Tile KPI: in vista settimanale, se ha un dettaglio giornaliero è cliccabile e si espande.
   function KpiTile({ label, val, sub, color, daily }: { label: string; val: string; sub: string; color: string; daily?: GiornoKpi[] }) {
     const espandibile = periodoAdv === 'settimana' && !!daily && daily.length > 0
-    const aperta = kpiAperta === label
+    const aperta = espandibile && kpiEspanse
     return (
       <div
-        onClick={espandibile ? () => setKpiAperta(aperta ? null : label) : undefined}
+        onClick={espandibile ? () => setKpiEspanse(v => !v) : undefined}
         className={`bg-white rounded-2xl border p-5 shadow-sm ${espandibile ? 'cursor-pointer hover:border-electric-blue/40 transition-colors' : 'border-ink-navy/10'} ${aperta ? 'border-electric-blue/50' : 'border-ink-navy/10'}`}>
         <div className="flex items-start justify-between gap-2">
           <p className="text-xs text-ink-navy/50 uppercase tracking-wide">{label}</p>
@@ -1016,7 +1016,7 @@ td.eur{color:#16a34a;font-weight:600}td.cap{text-transform:capitalize}tr:nth-chi
             const maxCop = Math.max(...gb.map(b => b.coperti), 1)
             return (
               <>
-                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   {[
                     { label: 'Incasso totale', val: fmtEur(d.totaleIncasso), sub: periodoAdvLabel, color: 'text-emerald-600', daily: dettaglioGiornaliero(d.andamento, b => fmtEur(b.incasso)) },
                     { label: 'Tavoli serviti', val: String(d.totaleOrdini), sub: 'conti chiusi', color: 'text-ink-navy', daily: dettaglioGiornaliero(d.andamento, b => String(b.ordini)) },
@@ -1139,7 +1139,7 @@ td.eur{color:#16a34a;font-weight:600}td.cap{text-transform:capitalize}tr:nth-chi
             const maxFascia = Math.max(1, ...d.fasceAsporto.map(f => f.count), ...d.fasceDelivery.map(f => f.count))
             return (
               <>
-                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   {[
                     { label: 'Incasso totale', val: fmtEur(d.totaleIncasso), sub: periodoAdvLabel, color: 'text-emerald-600', daily: dettaglioGiornaliero(d.andamento, b => fmtEur(b.incasso)) },
                     { label: 'Totale ordini', val: String(d.totaleOrdini), sub: 'asporto + delivery', color: 'text-ink-navy', daily: dettaglioGiornaliero(d.andamento, b => String(b.ordini)) },

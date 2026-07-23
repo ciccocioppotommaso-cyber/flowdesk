@@ -732,16 +732,16 @@ export default function StaffPage() {
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-purple-800">Link area dipendenti</p>
               <p className="text-xs text-purple-600 font-mono mt-0.5 truncate">
-                {typeof window !== 'undefined' ? window.location.origin : ''}/dipendente/login/{publicId ?? '…'}
+                {typeof window !== 'undefined' ? window.location.origin : ''}/food/dipendente/login/{publicId ?? '…'}
               </p>
               <div className="flex gap-2 mt-2">
                 <button
-                  onClick={() => navigator.clipboard.writeText(`${window.location.origin}/dipendente/login/${publicId ?? ''}`)}
+                  onClick={() => navigator.clipboard.writeText(`${window.location.origin}/food/dipendente/login/${publicId ?? ''}`)}
                   className="text-xs px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium transition-colors">
                   Copia link
                 </button>
                 <button
-                  onClick={() => setQrDip({ nome: 'Area dipendenti', url: `${window.location.origin}/dipendente/login/${publicId ?? ''}` })}
+                  onClick={() => setQrDip({ nome: 'Area dipendenti', url: `${window.location.origin}/food/dipendente/login/${publicId ?? ''}` })}
                   className="text-xs px-3 py-1.5 bg-white border border-purple-300 text-purple-700 rounded-lg hover:bg-purple-100 font-medium transition-colors">
                   Mostra QR
                 </button>
@@ -1101,9 +1101,9 @@ export default function StaffPage() {
                     <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-green-200">
                       <span className="text-xs text-green-600">Link accesso</span>
                       <button
-                        onClick={() => navigator.clipboard.writeText(`${window.location.origin}/dipendente/login/${publicId ?? ''}`)}
+                        onClick={() => navigator.clipboard.writeText(`${window.location.origin}/food/dipendente/login/${publicId ?? ''}`)}
                         className="font-mono text-xs text-green-800 hover:text-electric-blue underline underline-offset-2">
-                        {typeof window !== 'undefined' ? window.location.origin : ''}/dipendente/login/{publicId ?? '…'}
+                        {typeof window !== 'undefined' ? window.location.origin : ''}/food/dipendente/login/{publicId ?? '…'}
                       </button>
                     </div>
                   </div>

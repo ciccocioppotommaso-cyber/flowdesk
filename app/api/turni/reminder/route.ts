@@ -60,7 +60,7 @@ export async function POST(req: Request) {
       </tr>`
     }).join('')
 
-    const linkArea = dip.token ? `<p style="margin:20px 0 0;text-align:center;"><a href="${BASE_URL}/staff/${dip.token}" style="background:#4f46e5;color:white;padding:10px 24px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600;">Vai alla tua area personale</a></p>` : ''
+    const linkArea = dip.token ? `<p style="margin:20px 0 0;text-align:center;"><a href="${BASE_URL}/food/staff/${dip.token}" style="background:#4f46e5;color:white;padding:10px 24px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600;">Vai alla tua area personale</a></p>` : ''
 
     const html = `<!DOCTYPE html>
 <html>

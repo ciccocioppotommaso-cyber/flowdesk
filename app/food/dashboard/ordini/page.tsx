@@ -127,12 +127,17 @@ export default function OrdiniPage() {
   // dalla pagina Delivery o dall'area dipendenti); per asporto/tavolo resta 'consegnato'.
   async function avanzaOrdine(o: Ordine) {
     const nuovoStatus = o.tipo === 'delivery' ? 'pronto' : 'consegnato'
-    await fetch(`/api/ordini/${o.id}`, {
-      method: 'PATCH', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: nuovoStatus }),
-    })
-    fetchOrdini()
+    // Update ottimistico: la card si sposta subito, senza aspettare il server.
+    setOrdini(prev => prev.map(x => x.id === o.id ? { ...x, status: nuovoStatus } : x))
+    try {
+      await fetch(`/api/ordini/${o.id}`, {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nuovoStatus }),
+      })
+    } finally {
+      fetchOrdini()
+    }
   }
 
   async function cancellaOrdine(id: string) {

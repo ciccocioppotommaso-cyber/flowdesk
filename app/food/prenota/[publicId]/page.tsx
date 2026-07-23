@@ -415,12 +415,16 @@ export default function PrenotaPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ publicId, ...dati, indirizzo: dati.via ? `${dati.via}, ${dati.cap} ${dati.citta}`.trim() : '', righe: carrello }),
       })
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       if (res.ok) {
         setNumeroOrdine(json.numero)
         setStep('inviato')
         setCarrello([])
+      } else {
+        setErrIndirizzo(json.error ?? 'Impossibile inviare l\'ordine. Riprova.')
       }
+    } catch {
+      setErrIndirizzo('Errore di connessione. Riprova.')
     } finally {
       setInviando(false)
     }
@@ -763,7 +767,7 @@ export default function PrenotaPage() {
 
           {/* Bottone carrello fisso */}
           {totArticoli > 0 && !entrambiBloccati && (
-            <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-lg">
+            <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-lg" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
               <div className="max-w-lg mx-auto">
                 <button onClick={() => setStep('checkout')}
                   className="w-full py-3.5 rounded-2xl text-white font-bold flex items-center justify-between px-5 shadow-md"
@@ -929,11 +933,6 @@ export default function PrenotaPage() {
                     className={`${inp} ${dati.cap && !capValido ? 'border-red-300 focus:ring-red-200' : ''}`} />
                   {dati.cap && !capValido && <p className="text-xs text-red-500 mt-1">CAP non valido (5 cifre)</p>}
                 </div>
-                {errIndirizzo && (
-                  <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2.5 text-sm text-red-700 font-medium">
-                    {errIndirizzo}
-                  </div>
-                )}
               </div>
             )}
 
@@ -947,8 +946,13 @@ export default function PrenotaPage() {
           </div>
 
           {/* Bottone invio */}
-          <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-lg">
+          <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-lg" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
             <div className="max-w-lg mx-auto">
+              {errIndirizzo && (
+                <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2.5 text-sm text-red-700 font-medium mb-3">
+                  {errIndirizzo}
+                </div>
+              )}
               <button onClick={inviaOrdine} disabled={inviando || !checkoutValido}
                 className="w-full py-3.5 rounded-2xl text-white font-bold text-base disabled:opacity-50 transition-opacity"
                 style={{ backgroundColor: coloreP }}>

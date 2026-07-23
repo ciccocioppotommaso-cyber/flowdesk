@@ -24,7 +24,7 @@ export default function DipendenteLoginSlug() {
     const data = await res.json()
     setLoading(false)
     if (!res.ok) { setErrore(data.error ?? 'Errore di accesso'); return }
-    router.push('/dipendente/dashboard')
+    router.push('/food/dipendente/dashboard')
   }
 
   const inp = 'w-full border border-ink-navy/15 rounded-xl px-4 py-3 text-sm text-ink-navy placeholder:text-ink-navy/30 focus:outline-none focus:ring-2 focus:ring-electric-blue/40 focus:border-electric-blue/50 transition bg-white'

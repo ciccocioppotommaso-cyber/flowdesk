@@ -59,7 +59,7 @@ export async function PATCH(req: Request) {
     //
     // Auto-genera il publicId dal nomeLocale SOLO la prima volta (se non esiste ancora).
     // Una volta impostato non viene mai rigenerato, nemmeno se cambi il nome del locale:
-    // così il link dell'area dipendenti (/dipendente/login/<id>) resta stabile.
+    // così il link dell'area dipendenti (/food/dipendente/login/<id>) resta stabile.
     if (!user.publicId && !update.publicId && update.nomeLocale) {
       const base = (update.nomeLocale as string)
         .toLowerCase()

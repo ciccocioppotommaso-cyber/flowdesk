@@ -141,8 +141,8 @@ export async function sendEmailProposta(params: EmailPropostaParams) {
   if (EMAIL_DISABLED || !process.env.RESEND_API_KEY || !params.clienteEmail) return
   const isTavolo = params.tipo === 'tavolo'
   const dettagli = buildDettagliRighe(params)
-  const linkAccetta = `${BASE_URL}/risposta/${params.token}?azione=accetta`
-  const linkRifiuta = `${BASE_URL}/risposta/${params.token}?azione=rifiuta`
+  const linkAccetta = `${BASE_URL}/food/risposta/${params.token}?azione=accetta`
+  const linkRifiuta = `${BASE_URL}/food/risposta/${params.token}?azione=rifiuta`
 
   const html = wrapEmail(
     params.nomeLocale,

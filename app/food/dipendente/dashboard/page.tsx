@@ -75,7 +75,7 @@ const inp = 'w-full border border-ink-navy/15 rounded-xl px-3 py-2.5 text-sm tex
 
 const NAV_ITEMS: { key: Sezione; label: string; emoji: string; desc: string; color: string }[] = [
   { key: 'timbra',       label: 'Timbra',        emoji: '📷', desc: 'Registra entrata o uscita', color: 'bg-electric-blue' },
-  { key: 'delivery',     label: 'Delivery',      emoji: '🛵', desc: 'Ordini da consegnare',      color: 'bg-teal-500' },
+  { key: 'delivery',     label: 'Delivery',      emoji: '🛵', desc: 'Ordini da consegnare',      color: 'bg-electric-blue' },
   { key: 'turni',        label: 'I miei turni',  emoji: '📅', desc: 'Vedi i turni assegnati',    color: 'bg-violet-500' },
   { key: 'disponibilita',label: 'Disponibilità', emoji: '✅', desc: 'Indica quando sei libero',  color: 'bg-emerald-500' },
   { key: 'richieste',    label: 'Richieste',     emoji: '📋', desc: 'Ferie, permessi, assenze',  color: 'bg-amber-500' },
@@ -126,14 +126,14 @@ export default function DipendenteDashboard() {
   const [meseCal, setMeseCal] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d })
   const [turnoSelezionato, setTurnoSelezionato] = useState<Turno | null>(null)
 
-  const [loginUrl, setLoginUrl] = useState('/dipendente/login')
+  const [loginUrl, setLoginUrl] = useState('/food/dipendente/login')
 
   async function fetchProfilo() {
     const res = await fetch('/api/dipendente/profilo', { credentials: 'include' })
-    if (res.status === 401) { router.push('/dipendente/login'); return }
+    if (res.status === 401) { router.push('/food/dipendente/login'); return }
     const d = await res.json()
     setDipendente(d.dipendente)
-    if (d.slug) setLoginUrl(`/dipendente/login/${d.slug}`)
+    if (d.slug) setLoginUrl(`/food/dipendente/login/${d.slug}`)
     setLoading(false)
   }
 
@@ -398,8 +398,8 @@ export default function DipendenteDashboard() {
             {/* Consegne delivery */}
             <button onClick={() => setSezione('delivery')}
               className="w-full bg-white rounded-xl border border-ink-navy/10 shadow-sm p-4 flex items-center gap-4 active:bg-mist transition-colors">
-              <div className="w-10 h-10 rounded-lg bg-teal-100 flex items-center justify-center shrink-0">
-                <IconDelivery className="w-5 h-5 text-teal-600" />
+              <div className="w-10 h-10 rounded-lg bg-electric-blue/10 flex items-center justify-center shrink-0">
+                <IconDelivery className="w-5 h-5 text-electric-blue" />
               </div>
               <div className="text-left flex-1 min-w-0">
                 <p className="font-semibold text-ink-navy text-sm">Consegne delivery</p>
@@ -408,7 +408,7 @@ export default function DipendenteDashboard() {
                 </p>
               </div>
               {deliveryOrdini.length > 0 && (
-                <span className="bg-teal-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shrink-0">{deliveryOrdini.length}</span>
+                <span className="bg-electric-blue text-white text-xs font-bold px-2 py-0.5 rounded-full shrink-0">{deliveryOrdini.length}</span>
               )}
               <span className="text-ink-navy/20 shrink-0">›</span>
             </button>
@@ -586,9 +586,9 @@ export default function DipendenteDashboard() {
                   let ci: { nome?: string; telefono?: string; indirizzo?: string; ora?: string } = {}
                   try { ci = JSON.parse(o.clienteInfo ?? '{}') } catch {}
                   return (
-                    <div key={o.id} className="bg-white rounded-2xl border border-teal-200 shadow-sm overflow-hidden">
-                      <div className="bg-teal-50 px-4 py-3 border-b border-teal-200 flex items-center justify-between gap-2">
-                        <p className="font-bold text-teal-800 truncate">{ci.nome || 'Cliente'}</p>
+                    <div key={o.id} className="bg-white rounded-2xl border border-electric-blue/25 shadow-sm overflow-hidden">
+                      <div className="bg-electric-blue/5 px-4 py-3 border-b border-electric-blue/25 flex items-center justify-between gap-2">
+                        <p className="font-bold text-electric-blue truncate">{ci.nome || 'Cliente'}</p>
                         {ci.ora && <span className="text-base font-bold text-ink-navy shrink-0">🕐 {ci.ora}</span>}
                       </div>
                       <div className="px-4 py-3 space-y-1.5">
@@ -601,7 +601,7 @@ export default function DipendenteDashboard() {
                       </div>
                       <div className="px-4 pb-4">
                         <button onClick={() => segnaConsegnato(o.id)}
-                          className="w-full bg-teal-600 text-white font-semibold py-2.5 rounded-xl hover:bg-teal-700 transition-colors text-sm">
+                          className="w-full bg-electric-blue text-white font-semibold py-2.5 rounded-xl hover:bg-electric-blue/90 transition-colors text-sm">
                           Segna consegnato
                         </button>
                       </div>

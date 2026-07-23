@@ -93,8 +93,8 @@ function MenuStrumenti({ publicId }: { publicId: string }) {
   }
 
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const menuUrl = publicId ? `${origin}/menu/${publicId}` : null
-  const prenotaUrl = publicId ? `${origin}/prenota/${publicId}` : null
+  const menuUrl = publicId ? `${origin}/food/menu/${publicId}` : null
+  const prenotaUrl = publicId ? `${origin}/food/prenota/${publicId}` : null
   const qrUrl = menuUrl ? `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(menuUrl)}&size=300x300` : null
   const qrPrenotaUrl = prenotaUrl ? `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(prenotaUrl)}&size=300x300` : null
   const embedCode = menuUrl ? `<iframe src="${menuUrl}" width="100%" height="700" frameborder="0" style="border-radius:12px"></iframe>` : null
@@ -222,7 +222,7 @@ function CamerieriStrumenti({ publicId }: { publicId: string }) {
   }
 
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const camUrl = publicId ? `${origin}/cameriere/${publicId}` : null
+  const camUrl = publicId ? `${origin}/food/cameriere/${publicId}` : null
   const qrUrl = camUrl ? `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(camUrl)}&size=300x300` : null
 
   if (!publicId) return (
@@ -315,7 +315,7 @@ function PrenotazioniStrumenti({ publicId }: { publicId: string }) {
   }
 
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const prenotaUrl = `${origin}/prenota/${publicId}`
+  const prenotaUrl = `${origin}/food/prenota/${publicId}`
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(prenotaUrl)}&size=400x400`
   const buttonCode = `<a href="${prenotaUrl}" target="_blank" style="display:inline-block;padding:12px 24px;background:#4f46e5;color:#fff;border-radius:8px;text-decoration:none;font-family:sans-serif;font-weight:600">Prenota ora</a>`
   const iframeCode = `<iframe src="${prenotaUrl}" width="100%" height="700" frameborder="0" style="border-radius:12px"></iframe>`
@@ -991,7 +991,7 @@ export default function Impostazioni() {
 
           {sezioneAttiva === 'bot' && (() => {
             const origin = typeof window !== 'undefined' ? window.location.origin : ''
-            const loginDip = publicId ? `${origin}/dipendente/login/${publicId}` : ''
+            const loginDip = publicId ? `${origin}/food/dipendente/login/${publicId}` : ''
             return (
             <Section title="ID pubblico del locale" subtitle="Identificativo unico del tuo locale, usato per l'area dipendenti e per i link pubblici (menu e prenotazioni)."
               onSave={() => saveSezione('bot', { publicId: publicId.trim().toLowerCase().replace(/[^a-z0-9-]/g, '') || null })}
@@ -1020,7 +1020,7 @@ export default function Impostazioni() {
                         className="text-xs bg-white border border-ink-navy/15 text-ink-navy/70 font-semibold px-3 py-1.5 rounded-lg hover:bg-mist shrink-0">Copia</button>
                     </div>
                   </div>
-                  <p className="text-xs text-ink-navy/40">Lo stesso ID è usato anche nei link pubblici <code className="text-ink-navy/60">/menu/{publicId}</code>, <code className="text-ink-navy/60">/prenota/{publicId}</code> e <code className="text-ink-navy/60">/cameriere/{publicId}</code>.</p>
+                  <p className="text-xs text-ink-navy/40">Lo stesso ID è usato anche nei link pubblici <code className="text-ink-navy/60">/food/menu/{publicId}</code>, <code className="text-ink-navy/60">/food/prenota/{publicId}</code> e <code className="text-ink-navy/60">/food/cameriere/{publicId}</code>.</p>
                 </div>
               ) : (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">

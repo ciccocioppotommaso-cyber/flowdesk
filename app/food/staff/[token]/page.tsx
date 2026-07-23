@@ -197,7 +197,7 @@ export default function StaffAreaPage() {
         <div className="text-5xl mb-4">⛔</div>
         <h2 className="text-lg font-bold text-gray-900">Accesso non valido</h2>
         <p className="text-gray-500 text-sm mt-2">{errore}</p>
-        <a href="/staff" className="mt-4 inline-block text-indigo-600 text-sm font-medium hover:underline">Richiedi un nuovo link</a>
+        <a href="/food/staff" className="mt-4 inline-block text-indigo-600 text-sm font-medium hover:underline">Richiedi un nuovo link</a>
       </div>
     </div>
   )
