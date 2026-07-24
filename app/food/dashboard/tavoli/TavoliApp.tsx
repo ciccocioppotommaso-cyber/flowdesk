@@ -1,5 +1,6 @@
 'use client'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import Link from 'next/link'
 import QRCode from 'qrcode'
 import { IconTable, IconCheck, IconTrash, IconPencil } from '@/app/components/icons'
 import { ModificaOrdineModal } from '../components/ModificaOrdineModal'
@@ -958,15 +959,15 @@ export function TavoliApp({ mode }: { mode: 'live' | 'gestione' }) {
           </button>
           {gestione ? (
             <>
-              <a href="/food/dashboard/tavoli"
-                className="font-semibold px-4 py-2 rounded-xl text-sm border bg-white border-ink-navy/15 text-ink-navy/70 hover:bg-mist transition-colors">← Mappa live</a>
+              <Link href="/food/dashboard/tavoli"
+                className="font-semibold px-4 py-2 rounded-xl text-sm border bg-white border-ink-navy/15 text-ink-navy/70 hover:bg-mist transition-colors">← Mappa live</Link>
               <button onClick={apriNuovoTavolo} className="bg-electric-blue text-white font-semibold px-4 py-2 rounded-xl text-sm hover:bg-electric-blue/90 shadow-sm">
                 + Nuovo tavolo
               </button>
             </>
           ) : (
-            <a href="/food/dashboard/tavoli/gestione"
-              className="bg-electric-blue text-white font-semibold px-4 py-2 rounded-xl text-sm hover:bg-electric-blue/90 shadow-sm transition-colors">Gestione mappa →</a>
+            <Link href="/food/dashboard/tavoli/gestione"
+              className="bg-electric-blue text-white font-semibold px-4 py-2 rounded-xl text-sm hover:bg-electric-blue/90 shadow-sm transition-colors">Gestione mappa →</Link>
           )}
         </div>
       </div>
@@ -1107,10 +1108,10 @@ export function TavoliApp({ mode }: { mode: 'live' | 'gestione' }) {
                       className="w-full py-2.5 rounded-xl bg-ink-navy text-white text-sm font-semibold hover:bg-ink-navy/80 disabled:opacity-40 transition-colors">
                       {primo && chiudendo === primo.id ? '…' : 'Chiudi tavolo'}
                     </button>
-                    <a href="/food/dashboard/conti"
+                    <Link href="/food/dashboard/conti"
                       className="block text-center mt-2 text-xs font-semibold text-electric-blue hover:underline">
                       Vai al conto in Conti →
-                    </a>
+                    </Link>
                   </div>
                 </>
               )}

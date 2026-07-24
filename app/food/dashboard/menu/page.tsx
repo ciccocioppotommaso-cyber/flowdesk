@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { IconFork, IconPencil, IconTrash } from '@/app/components/icons'
 import { preparaFoto } from '@/lib/uploadFoto'
 
@@ -399,7 +400,7 @@ export default function MenuPage() {
       <MenuEditor key={tab} tipo={tab} />
 
       <p className="text-xs text-ink-navy/35 text-center">
-        Per logo e colori vai in <a href="/food/dashboard/impostazioni?sezione=menu" className="text-electric-blue underline">Impostazioni → Menu & Offerta</a>
+        Per logo e colori vai in <Link href="/food/dashboard/impostazioni?sezione=menu" className="text-electric-blue underline">Impostazioni → Menu & Offerta</Link>
       </p>
 
     </div>
